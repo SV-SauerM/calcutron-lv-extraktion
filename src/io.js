@@ -88,8 +88,15 @@
       const hatUntergruppen = kinder.some(istGruppe);
       const produkte = rows.filter(x => !istGruppe(x) && String(x[0]).startsWith(p + '.') && String(x[0]).split('.').length === p.split('.').length + 1);
       if (hatUntergruppen && !produkte.length) continue;
+      const teile = p.split('.');
+      const titelPfad = [];
+      for (let k = 1; k < teile.length; k++) {
+        const vor = teile.slice(0, k).join('.');
+        const g = rows.find(x => istGruppe(x) && String(x[0]) === vor);
+        if (g) titelPfad.push({ oz: vor, name: String(g[3] || '') });
+      }
       pos.push({
-        oz: p, kurztext: String(r[3] || ''), langtext: String(r[12] || ''), menge: Number(r[8]) || 1, einheit: 'St',
+        oz: p, titelPfad, kurztext: String(r[3] || ''), langtext: String(r[12] || ''), menge: Number(r[8]) || 1, einheit: 'St',
         referenz: produkte.map(x => x[5] ? String(x[5]) : null).filter(Boolean),
         referenzZeilen: produkte.map(x => ({ ext: x[5], desc: x[3], menge: x[8] }))
       });
@@ -160,6 +167,7 @@
           pos.push({
             oz: praefix.map(p => p.nr).concat(nr).filter(Boolean).join('.'),
             titel: praefix.map(p => p.name).join(' / '),
+            titelPfad: praefix.map((p, i) => ({ oz: praefix.slice(0, i + 1).map(x => x.nr).filter(Boolean).join('.'), name: p.name })),
             kurztext: kurz, langtext: lang,
             menge: qty ? Number(textAus(qty).replace(',', '.')) || 1 : 1,
             einheit: qu ? textAus(qu) : 'St'

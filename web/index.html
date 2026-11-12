@@ -80,6 +80,22 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 @keyframes dreh { to { transform: rotate(360deg); } }
 .balken { flex: 1 1 160px; max-width: 320px; height: 6px; border-radius: 3px; background: var(--linie); overflow: hidden; }
 .balken i { display: block; height: 100%; background: var(--akzent); width: 0; transition: width .15s; }
+.auswahl { background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; padding: 12px; display: grid; gap: 10px; }
+.auswahlKopf { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.auswahlKopf strong { font-weight: 600; }
+.auswahlKopf .zahl { color: var(--mut); font-size: 13px; font-variant-numeric: tabular-nums; }
+.auswahlKopf .trenner { flex: 1 1 auto; }
+.baum { max-height: 60vh; overflow: auto; border-top: 1px solid var(--linie); padding-top: 6px; font-size: 13px; }
+.knoten > .kinder { margin-left: 22px; border-left: 1px dotted var(--linie); padding-left: 6px; }
+.bzeile { display: flex; align-items: center; gap: 6px; padding: 2px 0; min-width: 0; }
+.bzeile.aus .btext { color: var(--mut); text-decoration: line-through; }
+.bzeile label { display: inline-flex; align-items: baseline; gap: 8px; cursor: pointer; min-width: 0; }
+.bzeile .boz { font-family: var(--mono); font-size: 12px; color: var(--mut); white-space: nowrap; }
+.bzeile .btitel { font-weight: 600; }
+.bzeile .btext { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bzeile .banz { color: var(--mut); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.klapp { border: 0; background: transparent; padding: 0 4px; width: 22px; color: var(--mut); font-size: 12px; }
+.klapp.leer { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 @media (max-width: 640px) { .profilgrid { grid-template-columns: 1fr; } .profilgrid .reset { justify-self: start; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -95,6 +111,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     <label class="datei primaer" for="lvDatei">LV öffnen (.xlsx, .x83)<input id="lvDatei" type="file" accept=".xlsx,.x83,.X83,.xml"></label>
     <button id="neuBtn">Neues Projekt</button>
     <button id="beispielBtn">Beispiel-LV laden</button>
+    <button id="auswahlBtn" disabled>Auswahl ändern</button>
     <label class="feld" for="vorgabe">Hersteller für alles
       <select id="vorgabe"><option value="">nach Profil</option></select></label>
     <span class="trenner"></span>
@@ -106,6 +123,20 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit) oder GAEB X83</div>
 
   <div class="status" id="status" role="status" aria-live="polite"></div>
+
+  <section class="auswahl" id="auswahl" hidden>
+    <div class="auswahlKopf">
+      <strong>Positionen auswählen</strong>
+      <span class="zahl" id="auswahlZahl"></span>
+      <span class="trenner"></span>
+      <button type="button" id="aufBtn">Alle Positionen zeigen</button>
+      <button type="button" id="zuBtn">Nur Titel zeigen</button>
+      <button type="button" id="alleBtn">Alle anhaken</button>
+      <button type="button" id="keineBtn">Keine</button>
+      <button type="button" class="primaer" id="startBtn">Abgleich starten</button>
+    </div>
+    <div class="baum" id="baum"></div>
+  </section>
 
   <div class="zahlen" id="zahlen"></div>
   <p class="hinweis" id="quelleHinweis"></p>
@@ -330,7 +361,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   }
 
   function neuesProjekt() {
-    lv = null; ergebnisse = [];
+    lv = null; ergebnisse = []; lvVoll = null;
+    $('auswahl').hidden = true; $('auswahlBtn').disabled = true; $('baum').textContent = '';
     $('vorgabe').value = '';
     $('zahlen').textContent = '';
     $('quelleHinweis').textContent = '';
@@ -341,6 +373,108 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       'Oben „LV öffnen“ wählen oder die Datei auf das gestrichelte Feld ziehen. Zum Ausprobieren: „Beispiel-LV laden“.')));
     status('');
   }
+
+  // ---------- Auswahl (Titel/Positionen abwählen, bevor abgeglichen wird)
+  let lvVoll = null, lvName = '', baumKnoten = [];
+  function quelleText(d, name) { return `${name}${d.titel ? ' · ' + d.titel : ''} · Quelle: ${{ xlsx: 'Tabelle', barebone: 'Calcutron-Barebone', x83: 'GAEB X83' }[d.quelle] || d.quelle}`; }
+
+  function baueBaum(positionen) {
+    const wurzel = { oz: '', name: '', kinder: [], pos: [], map: new Map() };
+    for (const p of positionen) {
+      let pfad = p.titelPfad && p.titelPfad.length ? p.titelPfad : null;
+      if (!pfad) { const t = String(p.oz).split('.'); pfad = t.slice(0, -1).map((_, i) => ({ oz: t.slice(0, i + 1).join('.'), name: '' })); }
+      let k = wurzel;
+      for (const st of pfad) {
+        if (!k.map.has(st.oz)) { const n = { oz: st.oz, name: st.name, kinder: [], pos: [], map: new Map(), offen: false }; k.map.set(st.oz, n); k.kinder.push(n); }
+        k = k.map.get(st.oz);
+      }
+      k.pos.push(p);
+    }
+    return wurzel;
+  }
+  const blaetter = n => n.pos.concat(...n.kinder.map(blaetter));
+
+  function zeigeBaum() {
+    const ziel = $('baum'); ziel.textContent = ''; baumKnoten = [];
+    const wurzel = baueBaum(lvVoll.positionen);
+    const posZeile = p => {
+      const id = 'b-' + baumKnoten.length;
+      const cb = el('input', { type: 'checkbox', id });
+      cb.addEventListener('change', () => { p._aus = !cb.checked; aktualisiereHaken(); });
+      const z = el('div', { class: 'bzeile' }, el('span', { class: 'klapp leer' }),
+        el('label', { for: id }, cb, el('span', { class: 'boz', text: p.oz }), el('span', { class: 'btext', text: String(p.kurztext || '').slice(0, 140) })),
+        el('span', { class: 'banz', text: `${p.menge} ${p.einheit || ''}` }));
+      baumKnoten.push({ cb, zeile: z, pos: [p] });
+      return z;
+    };
+    const knoten = n => {
+      const id = 'b-' + baumKnoten.length;
+      const cb = el('input', { type: 'checkbox', id });
+      const alle = blaetter(n);
+      cb.addEventListener('change', () => { alle.forEach(p => { p._aus = !cb.checked; }); aktualisiereHaken(); });
+      const kinder = el('div', { class: 'kinder' });
+      const klapp = el('button', { type: 'button', class: 'klapp', 'aria-label': 'auf- oder zuklappen' });
+      const setze = () => { kinder.hidden = !n.offen; klapp.textContent = n.offen ? '▾' : '▸'; klapp.setAttribute('aria-expanded', String(n.offen)); };
+      klapp.addEventListener('click', () => { n.offen = !n.offen; setze(); });
+      const anz = el('span', { class: 'banz' });
+      const z = el('div', { class: 'bzeile' }, klapp,
+        el('label', { for: id }, cb, el('span', { class: 'boz', text: n.oz }), el('span', { class: 'btext btitel', text: n.name || 'Titel ' + n.oz })), anz);
+      baumKnoten.push({ cb, zeile: z, pos: alle, anz });
+      n.kinder.forEach(k => kinder.append(knoten(k)));
+      n.pos.forEach(p => kinder.append(posZeile(p)));
+      setze();
+      n._setze = setze; n._kinder = kinder;
+      return el('div', { class: 'knoten' }, z, kinder);
+    };
+    // Titel sichtbar, Positionen eingeklappt; ohne Titel direkt die Positionen
+    const offenAlle = (n, wert) => { n.offen = wert; n.kinder.forEach(k => offenAlle(k, wert)); };
+    wurzel.kinder.forEach(k => ziel.append(knoten(k)));
+    wurzel.pos.forEach(p => ziel.append(posZeile(p)));
+    const nurTitel = () => { const lauf = n => { n.offen = n.kinder.length > 0; n._setze && n._setze(); n.kinder.forEach(lauf); }; wurzel.kinder.forEach(lauf); };
+    nurTitel();
+    $('aufBtn').onclick = () => { const lauf = n => { n.offen = true; n._setze(); n.kinder.forEach(lauf); }; wurzel.kinder.forEach(lauf); };
+    $('zuBtn').onclick = nurTitel;
+    aktualisiereHaken();
+  }
+
+  function aktualisiereHaken() {
+    for (const k of baumKnoten) {
+      const an = k.pos.filter(p => !p._aus).length;
+      k.cb.checked = an === k.pos.length && an > 0;
+      k.cb.indeterminate = an > 0 && an < k.pos.length;
+      k.zeile.classList.toggle('aus', an === 0);
+      if (k.anz) k.anz.textContent = `${an}/${k.pos.length}`;
+    }
+    const an = lvVoll.positionen.filter(p => !p._aus).length;
+    $('auswahlZahl').textContent = `${an} von ${lvVoll.positionen.length} Positionen ausgewählt`;
+    $('startBtn').disabled = an === 0;
+  }
+
+  function zeigeAuswahl(daten, name) {
+    laufNr++;
+    lvVoll = JSON.parse(JSON.stringify(daten)); lvName = name;
+    lv = null; ergebnisse = [];
+    $('zahlen').textContent = '';
+    $('exportBarebone').disabled = $('exportPruef').disabled = true;
+    $('quelleHinweis').textContent = quelleText(lvVoll, name);
+    const tb = $('erg'); tb.textContent = '';
+    tb.append(el('tr', {}, el('td', { class: 'leer', colspan: '8' }, el('strong', { text: 'Auswahl treffen' }), 'Titel oder Positionen, die nicht gebraucht werden, oben abhaken. Dann „Abgleich starten“.')));
+    $('auswahl').hidden = false; $('auswahlBtn').disabled = false;
+    zeigeBaum();
+    status(`${name}: ${lvVoll.positionen.length} Positionen gelesen. Nicht benötigte Titel oder Positionen abhaken, dann „Abgleich starten“.`, 'info');
+  }
+
+  $('alleBtn').addEventListener('click', () => { lvVoll.positionen.forEach(p => { p._aus = false; }); aktualisiereHaken(); });
+  $('keineBtn').addEventListener('click', () => { lvVoll.positionen.forEach(p => { p._aus = true; }); aktualisiereHaken(); });
+  $('startBtn').addEventListener('click', () => {
+    const pos = lvVoll.positionen.filter(p => !p._aus);
+    if (!pos.length) { status('Keine Position ausgewählt.', 'fehler'); return; }
+    lv = { ...lvVoll, positionen: pos };
+    $('auswahl').hidden = true;
+    $('quelleHinweis').textContent = quelleText(lvVoll, lvName) + ` · ${pos.length} von ${lvVoll.positionen.length} Positionen ausgewählt`;
+    rechne();
+  });
+  $('auswahlBtn').addEventListener('click', () => { if (!lvVoll) return; $('auswahl').hidden = false; $('auswahl').scrollIntoView({ block: 'nearest' }); });
 
   function setzeLv(daten, name) {
     lv = JSON.parse(JSON.stringify(daten));
@@ -358,9 +492,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
         ? LVXIO.liesX83(await file.text())
         : LVXIO.liesLvXlsx(XLSX, XLSX.read(await file.arrayBuffer(), { type: 'array' }));
       if (!daten.positionen.length) { sperre(false); status(file.name + ': keine LV-Positionen gefunden. Erwartet wird ein Calcutron-Barebone, eine Tabelle mit Spalte „Kurztext“ oder GAEB X83.', 'fehler'); return; }
-      status(`${file.name}: ${daten.positionen.length} Positionen gelesen, starte Abgleich …`, 'laeuft', 0);
-      await pause();
-      setzeLv(daten, file.name);
+      sperre(false);
+      zeigeAuswahl(daten, file.name);
     } catch (e) { sperre(false); status(file.name + ' ließ sich nicht lesen: ' + (e && e.message || e), 'fehler'); }
   }
   $('lvDatei').addEventListener('change', e => { const f = e.target.files[0]; if (f) oeffneLv(f); e.target.value = ''; });
@@ -369,7 +502,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, () => drop.classList.remove('aktiv')));
   drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) oeffneLv(f); });
   $('neuBtn').addEventListener('click', () => { laufNr++; sperre(false); neuesProjekt(); status('Neues Projekt: alles zurückgesetzt.', 'ok'); });
-  $('beispielBtn').addEventListener('click', () => setzeLv(window.LVX_BEISPIEL, 'Beispiel'));
+  $('beispielBtn').addEventListener('click', () => zeigeAuswahl(window.LVX_BEISPIEL, 'Beispiel'));
   $('vorgabe').addEventListener('change', rechne);
 
   $('favDatei').addEventListener('change', async e => {
