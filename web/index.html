@@ -71,7 +71,16 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 .hchip button { padding: 1px 6px; border: 0; background: transparent; color: var(--mut); font-size: 13px; line-height: 1.4; }
 .hchip button:hover:not(:disabled) { color: var(--fg); background: var(--fl); }
 .profilgrid .reset { padding: 3px 8px; font-size: 12.5px; }
-.status { font-size: 12.5px; color: var(--mut); min-height: 1.2em; }
+.status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; color: var(--mut); min-height: 1.4em; }
+.status:empty { display: none; }
+.status.laeuft, .status.ok, .status.fehler { border-radius: 6px; padding: 9px 12px; border: 1px solid var(--linie); background: var(--fl); color: var(--fg); }
+.status.ok { background: var(--gruen-bg); border-color: transparent; color: var(--gruen); }
+.status.fehler { background: var(--rot-bg); border-color: transparent; color: var(--rot); font-weight: 500; }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--linie); border-top-color: var(--akzent); animation: dreh .8s linear infinite; flex: none; }
+@keyframes dreh { to { transform: rotate(360deg); } }
+.balken { flex: 1 1 160px; max-width: 320px; height: 6px; border-radius: 3px; background: var(--linie); overflow: hidden; }
+.balken i { display: block; height: 100%; background: var(--akzent); width: 0; transition: width .15s; }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 @media (max-width: 640px) { .profilgrid { grid-template-columns: 1fr; } .profilgrid .reset { justify-self: start; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
@@ -96,6 +105,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit) oder GAEB X83</div>
 
+  <div class="status" id="status" role="status" aria-live="polite"></div>
+
   <div class="zahlen" id="zahlen"></div>
   <p class="hinweis" id="quelleHinweis"></p>
 
@@ -104,8 +115,6 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     <div class="profilgrid" id="profil"></div>
     <p class="hinweis" style="margin-top:8px">Angehakte Hersteller werden in der angezeigten Reihenfolge versucht, die Nummer zeigt den Rang. Nicht angehakte bleiben in der Liste und lassen sich jederzeit wieder aktivieren. Änderungen gelten sofort und bleiben in diesem Browser gespeichert. Einzelne Positionen stellst du in der Tabelle über die Spalte „Hersteller“ um.</p>
   </details>
-
-  <div class="status" id="status" role="status"></div>
 
   <div class="tabelle">
     <table>
@@ -125,7 +134,19 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   'use strict';
   const $ = id => document.getElementById(id);
   const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) { if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v; else e.setAttribute(k, v); } for (const k of kids) if (k != null) e.append(k); return e; };
-  const status = t => { $('status').textContent = t || ''; };
+  // Status: art = 'info' | 'laeuft' | 'ok' | 'fehler'; anteil 0..1 zeigt einen Fortschrittsbalken
+  function status(t, art, anteil) {
+    const s = $('status');
+    s.className = 'status ' + (t ? (art || 'info') : '');
+    s.textContent = '';
+    if (!t) return;
+    if (art === 'laeuft') s.append(el('span', { class: 'spinner', 'aria-hidden': 'true' }));
+    s.append(el('span', { text: t }));
+    if (art === 'laeuft' && anteil != null) { const b = el('span', { class: 'balken' }, el('i')); b.firstChild.style.width = Math.round(anteil * 100) + '%'; s.append(b); }
+  }
+  const pause = () => new Promise(r => setTimeout(r, 0));
+  let laufNr = 0;
+  function sperre(an) { ['lvDatei', 'favDatei'].forEach(id => { $(id).disabled = an; }); ['beispielBtn', 'neuBtn'].forEach(id => { $(id).disabled = an; }); }
 
   let fav = window.LVX_FAVORITEN;
   let index = null, lv = null, ergebnisse = [];
@@ -208,14 +229,35 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   }
 
   // ---------- Abgleich
-  function rechne() {
+  async function rechne() {
     if (!lv) return;
+    const nr = ++laufNr;
     const t0 = performance.now();
     const vorgabe = $('vorgabe').value || null;
-    ergebnisse = lv.positionen.map(p => LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe }));
-    zeigeErgebnis();
-    status(`${lv.positionen.length} Positionen in ${Math.round(performance.now() - t0)} ms abgeglichen.`);
-    $('exportBarebone').disabled = $('exportPruef').disabled = false;
+    const n = lv.positionen.length;
+    $('exportBarebone').disabled = $('exportPruef').disabled = true;
+    sperre(true);
+    try {
+      const neu = [];
+      for (let i = 0; i < n; i++) {
+        const p = lv.positionen[i];
+        neu.push(LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe }));
+        if (i % 10 === 9 || i === n - 1) {
+          status(`Gleiche ab: ${i + 1} von ${n} Positionen …`, 'laeuft', (i + 1) / n);
+          await pause();
+          if (nr !== laufNr) return; // ein neuerer Lauf hat übernommen
+        }
+      }
+      ergebnisse = neu;
+      zeigeErgebnis();
+      const z = { gruen: 0, gelb: 0, rot: 0 }; ergebnisse.forEach(e => z[e.ampel]++);
+      status(`Fertig: ${n} Positionen in ${((performance.now() - t0) / 1000).toFixed(1)} s abgeglichen – grün ${z.gruen}, gelb ${z.gelb}, rot ${z.rot}.`, 'ok');
+      $('exportBarebone').disabled = $('exportPruef').disabled = false;
+    } catch (e) {
+      status('Abbruch beim Abgleich: ' + (e && e.message || e) + '. Bitte die Datei und diese Meldung an Claude geben.', 'fehler');
+    } finally {
+      if (nr === laufNr) sperre(false);
+    }
   }
 
   function hinweisListe(erg) {
@@ -309,17 +351,24 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   // ---------- Dateien
   async function oeffneLv(file) {
     try {
-      status('Lese ' + file.name + ' …');
-      if (/\.(x8\d|xml)$/i.test(file.name)) setzeLv(LVXIO.liesX83(await file.text()), file.name);
-      else setzeLv(LVXIO.liesLvXlsx(XLSX, XLSX.read(await file.arrayBuffer(), { type: 'array' })), file.name);
-    } catch (e) { status('Die Datei ließ sich nicht lesen: ' + e.message); }
+      sperre(true);
+      status('Lese ' + file.name + ' …', 'laeuft');
+      await pause();
+      const daten = /\.(x8\d|xml)$/i.test(file.name)
+        ? LVXIO.liesX83(await file.text())
+        : LVXIO.liesLvXlsx(XLSX, XLSX.read(await file.arrayBuffer(), { type: 'array' }));
+      if (!daten.positionen.length) { sperre(false); status(file.name + ': keine LV-Positionen gefunden. Erwartet wird ein Calcutron-Barebone, eine Tabelle mit Spalte „Kurztext“ oder GAEB X83.', 'fehler'); return; }
+      status(`${file.name}: ${daten.positionen.length} Positionen gelesen, starte Abgleich …`, 'laeuft', 0);
+      await pause();
+      setzeLv(daten, file.name);
+    } catch (e) { sperre(false); status(file.name + ' ließ sich nicht lesen: ' + (e && e.message || e), 'fehler'); }
   }
   $('lvDatei').addEventListener('change', e => { const f = e.target.files[0]; if (f) oeffneLv(f); e.target.value = ''; });
   const drop = $('drop');
   ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('aktiv'); }));
   ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, () => drop.classList.remove('aktiv')));
   drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) oeffneLv(f); });
-  $('neuBtn').addEventListener('click', () => { neuesProjekt(); status('Neues Projekt: alles zurückgesetzt.'); });
+  $('neuBtn').addEventListener('click', () => { laufNr++; sperre(false); neuesProjekt(); status('Neues Projekt: alles zurückgesetzt.', 'ok'); });
   $('beispielBtn').addEventListener('click', () => setzeLv(window.LVX_BEISPIEL, 'Beispiel'));
   $('vorgabe').addEventListener('change', rechne);
 
@@ -327,6 +376,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const files = [...e.target.files]; e.target.value = '';
     if (!files.length) return;
     try {
+      status(`Lese ${files.length} Favoriten-Datei(en) …`, 'laeuft'); await pause();
       let zeilen = fav.zeilen.slice(); const neu = [];
       for (const f of files) {
         const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
@@ -339,8 +389,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       await idbSet('favoriten', fav);
       baue(); favMeta('aktualisiert: ' + neu.join(', '));
       if (lv) rechne();
-      status('Favoriten aktualisiert: ' + neu.join(', '));
-    } catch (err) { status('Favoriten ließen sich nicht einlesen: ' + err.message); }
+      status('Favoriten aktualisiert: ' + neu.join(', '), 'ok');
+    } catch (err) { status('Favoriten ließen sich nicht einlesen: ' + err.message, 'fehler'); }
   });
 
   // ---------- Export (im claude.ai-Viewer über „downloads“, lokal als normaler Download)
@@ -348,13 +398,13 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     const dl = window.claude && window.claude.use ? await Promise.race([window.claude.use('downloads'), new Promise(r => setTimeout(() => r(null), 1500))]) : null;
     if (dl) {
-      try { await dl.save({ filename: name, data: new Blob([buf]) }); status(name + ' gespeichert.'); }
-      catch (e) { status(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern nicht möglich: ' + (e && e.message || e)); }
+      try { await dl.save({ filename: name, data: new Blob([buf]) }); status(name + ' gespeichert.', 'ok'); }
+      catch (e) { status(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern nicht möglich: ' + (e && e.message || e), e && e.code === 'declined' ? 'info' : 'fehler'); }
       return;
     }
     const a = el('a', { href: URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })), download: name });
     document.body.append(a); a.click(); a.remove();
-    status(name + ' erstellt.');
+    status(name + ' erstellt.', 'ok');
   }
   function ausgabe() { return LVXIO.baueAusgabe(lv.titel || 'Calcutron-LV-Extraktion', ergebnisse); }
   const datum = () => new Date().toISOString().slice(0, 10);
@@ -363,11 +413,13 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   // ---------- Start
   (async () => {
+    status('Favoriten werden geladen und indiziert …', 'laeuft'); await pause();
     const gespeichert = await idbGet('favoriten');
     if (gespeichert && gespeichert.zeilen) fav = gespeichert;
     baue(); favMeta(gespeichert ? 'lokal aktualisiert' : '');
     fuelleVorgabe(); profilAufbauen(); zeigeProfil();
     neuesProjekt();
+    status('Bereit. LV öffnen oder hierher ziehen.', 'ok');
   })();
 })();
 </script>
