@@ -132,9 +132,14 @@
   }
 
   function merkmale(text, typHint) {
-    const t = ' ' + norm(text) + ' ';
+    let t = ' ' + norm(text) + ' ';
     const m = {};
     let r;
+    // Jean-Müller-Typbezeichnung SL2-3x3/3A, SL00-3x3/100/…: SL<Größe> = NH-Größe, Code nicht weiter auswerten
+    if ((r = t.match(/\bsl\s?(000|00|0|1|2|3|4a?)-(\d)x\d+(?:\/[a-z0-9]+)*\/?/))) {
+      m.nh = r[1]; m.pole = r[2];
+      t = t.replace(/\bsl\s?(000|00|0|1|2|3|4a?)-(\d)x\d+(?:\/[a-z0-9]+)*\/?/g, ' ');
+    }
     m.typ = typHint || typErkennen(t);
 
     // Charakteristik + In aus B16 / C-16A / B 16 A
@@ -191,7 +196,7 @@
 
     // Querschnitt, Adern
     if ((r = t.match(/(?<![\d.x])(\d{1,2})\s?x\s?(\d{1,3}(?:\.\d+)?)\s?mm(?!\s?x)/))) { m.adern = num(r[1]); m.mm2 = num(r[2]); }
-    else if ((r = t.match(/(\d{1,3}(?:\.\d+)?)\s?(?:mm2|mm\^2|qmm|mm\b(?=.*klemme))/))) m.mm2 = num(r[1]);
+    else if ((r = t.match(/(\d{1,3}(?:\.\d+)?)\s?(?:mm2|mm\^2|qmm|mm\b(?!\s?(?:mittenabstand|sammelschien|system))(?=.*klemme))/))) m.mm2 = num(r[1]);
     else if ((r = t.match(/\b(?:pt|pti|ut|st)\s?(\d{1,2}(?:\.\d+)?)\b/))) m.mm2 = num(r[1]);
 
     // IP, Schutzklasse
@@ -213,12 +218,14 @@
     if (m.typ === 'schrank' && m.ple == null) { const ms = [...t.matchAll(/\b(\d{1,3})\s?m(?![a-z0-9])/g)].map(x => num(x[1])); if (ms.length) m.ple = Math.max(...ms); }
 
     // Sicherungsgrößen
-    if ((r = t.match(/\bnh\s?-?\s?(000|00|0|1|2|3|4a?)\b/)) || (r = t.match(/\bgr(?:oesse|\.)?\s?(000|00|0|1|2|3)\b/))) m.nh = r[1];
+    if (m.nh) { /* aus SL-Code */ } else if ((r = t.match(/\bnh\s?-?\s?(000|00|0|1|2|3|4a?)\b/)) || (r = t.match(/\bgr(?:oesse|\.)?\s?(000|00|0|1|2|3)\b/))) m.nh = r[1];
     if ((r = t.match(/\bd0\s?([123])\b/))) m.sich = 'D0' + r[1];
     else if (/neozed/.test(t)) m.sich = 'D0';
     else if (/\bd\s?ii\b|\be27\b/.test(t)) m.sich = 'DII';
     else if (/\bdiii\b|\be33\b/.test(t)) m.sich = 'DIII';
     if (m.nh) m.sich = m.sich || 'NH';
+    // Leisten/Trenner ohne Stromangabe: Bemessungsstrom aus der NH-Größe
+    if (m.nh && m.In == null && /^nh_(leiste|trenner)$/.test(m.typ || '')) m.In = { '000': 100, '00': 160, '0': 160, '1': 250, '2': 400, '3': 630, '4': 1250, '4a': 1250 }[m.nh];
 
     // Überspannungsschutz
     if (m.typ === 'uss' || /ableiter|ueberspannung|dehn/.test(t)) {
