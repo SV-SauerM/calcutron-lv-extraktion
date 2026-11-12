@@ -1,0 +1,24 @@
+{
+  "name": "calcutron-lv-extraktion",
+  "version": "1.0.0",
+  "description": "calcutron-lv-extraktion",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SV-SauerM/calcutron-lv-extraktion.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/SV-SauerM/calcutron-lv-extraktion/issues"
+  },
+  "homepage": "https://github.com/SV-SauerM/calcutron-lv-extraktion#readme",
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
+    "xlsx": "^0.18.5"
+  }
+}

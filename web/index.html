@@ -1,0 +1,309 @@
+<meta charset="utf-8">
+<title>Calcutron-LV-Extraktion</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Arbeitsfläche – Kopfleiste, Steuerzeile, Kennzahlen, Ergebnistabelle (Prüfliste) */
+:root {
+  --bg: #f4f6f8; --fl: #ffffff; --fg: #17212b; --mut: #5b6a78; --linie: #d8dee5;
+  --akzent: #1f5f99; --akzent-fg: #ffffff;
+  --gruen: #1e7a46; --gruen-bg: #e3f3ea; --gelb: #8a5a00; --gelb-bg: #fdf1d6; --rot: #a3272b; --rot-bg: #fbe5e5;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11171d; --fl: #18212a; --fg: #e3e9ef; --mut: #93a2b0; --linie: #2b3743;
+  --akzent: #6aa8e0; --akzent-fg: #0d1520;
+  --gruen: #6fd19a; --gruen-bg: #173326; --gelb: #f0c46b; --gelb-bg: #3a2e12; --rot: #f08b8e; --rot-bg: #3d1d1f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11171d; --fl: #18212a; --fg: #e3e9ef; --mut: #93a2b0; --linie: #2b3743;
+  --akzent: #6aa8e0; --akzent-fg: #0d1520;
+  --gruen: #6fd19a; --gruen-bg: #173326; --gelb: #f0c46b; --gelb-bg: #3a2e12; --rot: #f08b8e; --rot-bg: #3d1d1f; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1400px; margin: 0 auto; padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; }
+h1 small { font-weight: 400; color: var(--mut); font-size: 13px; margin-left: 8px; }
+.meta { color: var(--mut); font-size: 12.5px; font-family: var(--mono); }
+.leiste { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; padding: 12px; }
+.leiste .trenner { flex: 1 1 auto; }
+button, .datei { font: inherit; font-weight: 500; border-radius: 5px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--linie); background: var(--fl); color: var(--fg); }
+button.primaer, .datei.primaer { background: var(--akzent); color: var(--akzent-fg); border-color: var(--akzent); }
+button:focus-visible, .datei:focus-within, select:focus-visible, input:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+button:disabled { opacity: .5; cursor: default; }
+.datei input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+select, input[type=text] { font: inherit; padding: 5px 8px; border: 1px solid var(--linie); border-radius: 5px; background: var(--fl); color: var(--fg); }
+label.feld { display: inline-flex; gap: 6px; align-items: center; color: var(--mut); font-size: 13px; }
+.zahlen { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.chip.gruen { background: var(--gruen-bg); color: var(--gruen); } .chip.gelb { background: var(--gelb-bg); color: var(--gelb); } .chip.rot { background: var(--rot-bg); color: var(--rot); }
+.chip.neutral { background: var(--fl); border: 1px solid var(--linie); color: var(--mut); }
+.hinweis { color: var(--mut); font-size: 13px; max-width: 75ch; margin: 0; }
+.drop { border: 1.5px dashed var(--linie); border-radius: 6px; padding: 14px; text-align: center; color: var(--mut); }
+.drop.aktiv { border-color: var(--akzent); color: var(--akzent); }
+.tabelle { overflow-x: auto; background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; min-width: 1100px; font-size: 13px; }
+th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); padding: 8px 10px; border-bottom: 1px solid var(--linie); position: sticky; top: 0; background: var(--fl); }
+td { padding: 7px 10px; border-bottom: 1px solid var(--linie); vertical-align: top; }
+tr.unter td { background: color-mix(in srgb, var(--bg) 55%, var(--fl)); }
+tr.unter td.text { padding-left: 26px; }
+td.oz, td.ext { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+td.merk { font-family: var(--mono); font-size: 12px; color: var(--mut); }
+td.hin { color: var(--mut); font-size: 12.5px; max-width: 360px; }
+td.hin b { color: var(--fg); font-weight: 500; }
+.ampel { display: inline-block; min-width: 46px; text-align: center; border-radius: 3px; padding: 1px 6px; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.ampel.gruen { background: var(--gruen-bg); color: var(--gruen); } .ampel.gelb { background: var(--gelb-bg); color: var(--gelb); } .ampel.rot { background: var(--rot-bg); color: var(--rot); }
+.ref { font-size: 11.5px; font-family: var(--mono); }
+.ref.ok { color: var(--gruen); } .ref.nok { color: var(--rot); }
+details.profil { background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; padding: 10px 12px; }
+details.profil summary { cursor: pointer; font-weight: 500; }
+.profilgrid { display: grid; grid-template-columns: minmax(160px, 260px) 1fr; gap: 6px 12px; margin-top: 10px; align-items: center; }
+.profilgrid input { width: 100%; box-sizing: border-box; }
+.status { font-size: 12.5px; color: var(--mut); min-height: 1.2em; }
+@media (max-width: 640px) { .profilgrid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Calcutron-LV-Extraktion <small>heuristischer Favoritenabgleich, ohne KI</small></h1>
+    <div class="meta" id="favMeta">Favoriten werden geladen …</div>
+  </header>
+
+  <div class="leiste">
+    <label class="datei primaer" for="lvDatei">LV öffnen (.xlsx, .x83)<input id="lvDatei" type="file" accept=".xlsx,.x83,.X83,.xml"></label>
+    <button id="beispielBtn">Beispiel-LV laden</button>
+    <label class="feld" for="vorgabe">Hersteller für alles
+      <select id="vorgabe"><option value="">nach Profil</option></select></label>
+    <span class="trenner"></span>
+    <button id="exportBarebone" disabled>Barebone (.xlsx)</button>
+    <button id="exportPruef" disabled>Prüfliste (.xlsx)</button>
+    <label class="datei" for="favDatei">Favoriten aktualisieren<input id="favDatei" type="file" accept=".xlsx" multiple></label>
+  </div>
+
+  <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit) oder GAEB X83</div>
+
+  <div class="zahlen" id="zahlen"></div>
+  <p class="hinweis" id="quelleHinweis"></p>
+
+  <details class="profil">
+    <summary>Herstellerprofil „Standard Hundt“ (Reihenfolge je Kategorie, kommagetrennt)</summary>
+    <div class="profilgrid" id="profil"></div>
+    <p class="hinweis" style="margin-top:8px">Änderungen gelten sofort und bleiben in diesem Browser gespeichert. Einzelne Positionen stellst du in der Tabelle über die Spalte „Hersteller“ um.</p>
+  </details>
+
+  <div class="status" id="status" role="status"></div>
+
+  <div class="tabelle">
+    <table>
+      <thead><tr><th>OZ</th><th>Ampel</th><th>LV-Text</th><th>Erkannt</th><th>Gewählt</th><th>Ext. ID</th><th>Hersteller</th><th>Hinweise</th></tr></thead>
+      <tbody id="erg"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="engine.js"></script>
+<script src="io.js"></script>
+<script src="beispiel.js"></script>
+<script src="favoriten.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const el = (tag, attrs, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs || {})) { if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v; else e.setAttribute(k, v); } for (const k of kids) if (k != null) e.append(k); return e; };
+  const status = t => { $('status').textContent = t || ''; };
+
+  let fav = window.LVX_FAVORITEN;
+  let index = null, lv = null, ergebnisse = [];
+  const profil = JSON.parse(JSON.stringify(LVX.PROFIL_STANDARD));
+
+  // ---------- gespeicherte Einstellungen (nur dieser Browser)
+  const lade = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+  const speichere = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ohne Speicher weiter */ } };
+  Object.assign(profil.reihenfolge, lade('lvx-profil', {}));
+
+  // ---------- Favoriten-Updates aus IndexedDB (einzelne Lose ersetzt)
+  function idb() { return new Promise((res, rej) => { try { const r = indexedDB.open('lvx', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }); }
+  async function idbGet(k) { try { const db = await idb(); return await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result || null); q.onerror = () => res(null); }); } catch (e) { return null; } }
+  async function idbSet(k, v) { try { const db = await idb(); await new Promise(res => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = res; }); } catch (e) { /* ohne Speicher weiter */ } }
+
+  function favMeta(extra) {
+    const lose = new Set(fav.zeilen.map(z => z.los));
+    $('favMeta').textContent = `Favoriten: ${lose.size} Lose · ${index.artikel.length.toLocaleString('de-DE')} Artikel · ${index.pakete.length} Schrankpakete · Stand ${fav.stand}${extra ? ' · ' + extra : ''}`;
+  }
+
+  function baue() { index = LVX.baueIndex(fav.zeilen); }
+
+  // ---------- Profil-Editor
+  function zeigeProfil() {
+    const g = $('profil'); g.textContent = '';
+    for (const [kat, liste] of Object.entries(profil.reihenfolge)) {
+      const id = 'p-' + kat.replace(/[^a-z0-9]/gi, '');
+      const inp = el('input', { type: 'text', id, value: liste.join(', ') });
+      inp.addEventListener('change', () => {
+        profil.reihenfolge[kat] = inp.value.split(',').map(s => s.trim()).filter(Boolean);
+        speichere('lvx-profil', profil.reihenfolge);
+        if (lv) rechne();
+      });
+      g.append(el('label', { for: id, text: kat }), inp);
+    }
+  }
+  function fuelleVorgabe() {
+    const s = $('vorgabe');
+    const hs = [...new Set(index.artikel.map(a => a.hersteller).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+    for (const h of hs) s.append(el('option', { value: h, text: h }));
+  }
+
+  // ---------- Abgleich
+  function rechne() {
+    if (!lv) return;
+    const t0 = performance.now();
+    const vorgabe = $('vorgabe').value || null;
+    ergebnisse = lv.positionen.map(p => LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe }));
+    zeigeErgebnis();
+    status(`${lv.positionen.length} Positionen in ${Math.round(performance.now() - t0)} ms abgeglichen.`);
+    $('exportBarebone').disabled = $('exportPruef').disabled = false;
+  }
+
+  function hinweisListe(erg) {
+    const box = el('div');
+    for (const h of erg.hinweise) {
+      const z = el('div');
+      if (/^PL:/.test(h)) z.append(el('b', { text: h })); else z.textContent = h;
+      box.append(z);
+    }
+    return box;
+  }
+
+  function herstellerAuswahl(pos, erg) {
+    const typ = erg && erg.typ;
+    if (!typ || typ === 'nshv' || typ === 'sammelschiene') return '';
+    const pool = typ === 'schrank' ? index.pakete : (index.nachTyp.get(typ) || []);
+    const hs = [...new Set(pool.map(a => a.hersteller).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+    const s = el('select', { 'aria-label': 'Hersteller für Position ' + pos.oz });
+    s.append(el('option', { value: '', text: 'Profil' }));
+    for (const h of hs) { const o = el('option', { value: h, text: h }); if (pos._hersteller === h) o.selected = true; s.append(o); }
+    s.addEventListener('change', () => { pos._hersteller = s.value || null; rechne(); });
+    return s;
+  }
+
+  function zeile(pos, erg, unter, menge, refFeld) {
+    const g = erg.paket ? erg.paket.items[0] : erg.artikel;
+    const tr = el('tr', unter ? { class: 'unter' } : {});
+    const text = unter ? `${menge} × ${erg.text}` : `${pos.kurztext}${pos.langtext ? '\n' + pos.langtext.split('\n').slice(0, 2).join(' ') : ''}`;
+    const tdText = el('td', { class: 'text' }, el('div', { text: text.slice(0, 220) }));
+    if (refFeld) tdText.append(refFeld);
+    tr.append(
+      el('td', { class: 'oz', text: unter ? '' : pos.oz }),
+      el('td', {}, el('span', { class: 'ampel ' + erg.ampel, text: { gruen: 'grün', gelb: 'gelb', rot: 'rot' }[erg.ampel] })),
+      tdText,
+      el('td', { class: 'merk', text: (erg.typ ? LVX.TYP_NAME[erg.typ] + ' · ' : '') + LVX.merkmalText(erg.m || {}) }),
+      el('td', { text: g ? (erg.paket ? 'Paket: ' + erg.paket.desc : g.desc).replace(/\n/g, ' ').slice(0, 70) : (erg.placeholder || '—') }),
+      el('td', { class: 'ext', text: g ? `${erg.paket ? erg.paket.hersteller : g.hersteller} ${g.ext}` : '' }),
+      el('td', {}, unter ? '' : herstellerAuswahl(pos, erg)),
+      el('td', { class: 'hin' }, hinweisListe(erg))
+    );
+    return tr;
+  }
+
+  function zeigeErgebnis() {
+    const tb = $('erg'); tb.textContent = '';
+    const z = { gruen: 0, gelb: 0, rot: 0 }; let ref = 0, refOk = 0;
+    for (const e of ergebnisse) {
+      z[e.ampel]++;
+      const p = e.pos;
+      let refFeld = null;
+      if (p.referenz && p.referenz.length && e.haupt && !e.unter.length) {
+        const g = e.haupt.paket ? e.haupt.paket.items[0] : e.haupt.artikel;
+        const ok = !!g && p.referenz.includes(String(g.ext));
+        ref++; if (ok) refOk++;
+        refFeld = el('div', { class: 'ref ' + (ok ? 'ok' : 'nok'), text: (ok ? '✓ wie Referenz ' : '✗ Referenz ') + p.referenz.join('/') });
+      }
+      if (e.haupt) tb.append(zeile(p, e.haupt, false, 1, refFeld));
+      else tb.append(zeile(p, { ampel: e.ampel, hinweise: e.unter.length ? ['Bestückung ohne Schrank'] : ['nicht verarbeitet'], m: {}, text: p.kurztext }, false, 1, refFeld));
+      for (const u of e.unter) tb.append(zeile(p, u.erg, true, u.menge));
+    }
+    const n = ergebnisse.length || 1;
+    const pz = x => Math.round(100 * x / n) + ' %';
+    const c = $('zahlen'); c.textContent = '';
+    c.append(
+      el('span', { class: 'chip neutral', text: `${ergebnisse.length} Positionen` }),
+      el('span', { class: 'chip gruen', text: `grün ${z.gruen} · ${pz(z.gruen)}` }),
+      el('span', { class: 'chip gelb', text: `gelb ${z.gelb} · ${pz(z.gelb)}` }),
+      el('span', { class: 'chip rot', text: `rot ${z.rot} · ${pz(z.rot)}` }));
+    if (ref) c.append(el('span', { class: 'chip neutral', text: `wie Referenz ${refOk}/${ref}` }));
+  }
+
+  function setzeLv(daten, name) {
+    lv = daten;
+    $('quelleHinweis').textContent = `${name}${lv.titel ? ' · ' + lv.titel : ''} · Quelle: ${{ xlsx: 'Tabelle', barebone: 'Calcutron-Barebone', x83: 'GAEB X83' }[lv.quelle] || lv.quelle}`;
+    rechne();
+  }
+
+  // ---------- Dateien
+  async function oeffneLv(file) {
+    try {
+      status('Lese ' + file.name + ' …');
+      if (/\.(x8\d|xml)$/i.test(file.name)) setzeLv(LVXIO.liesX83(await file.text()), file.name);
+      else setzeLv(LVXIO.liesLvXlsx(XLSX, XLSX.read(await file.arrayBuffer(), { type: 'array' })), file.name);
+    } catch (e) { status('Die Datei ließ sich nicht lesen: ' + e.message); }
+  }
+  $('lvDatei').addEventListener('change', e => { const f = e.target.files[0]; if (f) oeffneLv(f); e.target.value = ''; });
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('aktiv'); }));
+  ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, () => drop.classList.remove('aktiv')));
+  drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) oeffneLv(f); });
+  $('beispielBtn').addEventListener('click', () => setzeLv(window.LVX_BEISPIEL, 'Beispiel'));
+  $('vorgabe').addEventListener('change', rechne);
+
+  $('favDatei').addEventListener('change', async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    if (!files.length) return;
+    try {
+      let zeilen = fav.zeilen.slice(); const neu = [];
+      for (const f of files) {
+        const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+        const z = LVXIO.liesFavoriten(XLSX, wb, f.name);
+        const los = z[0] && z[0].los;
+        zeilen = zeilen.filter(x => x.los !== los).concat(z);
+        neu.push(los.split(' ')[0]);
+      }
+      fav = { ...fav, zeilen, stand: new Date().toISOString().slice(0, 10) };
+      await idbSet('favoriten', fav);
+      baue(); favMeta('aktualisiert: ' + neu.join(', '));
+      if (lv) rechne();
+      status('Favoriten aktualisiert: ' + neu.join(', '));
+    } catch (err) { status('Favoriten ließen sich nicht einlesen: ' + err.message); }
+  });
+
+  // ---------- Export (im claude.ai-Viewer über „downloads“, lokal als normaler Download)
+  async function speichereDatei(name, wb) {
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    const dl = window.claude && window.claude.use ? await Promise.race([window.claude.use('downloads'), new Promise(r => setTimeout(() => r(null), 1500))]) : null;
+    if (dl) {
+      try { await dl.save({ filename: name, data: new Blob([buf]) }); status(name + ' gespeichert.'); }
+      catch (e) { status(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern nicht möglich: ' + (e && e.message || e)); }
+      return;
+    }
+    const a = el('a', { href: URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })), download: name });
+    document.body.append(a); a.click(); a.remove();
+    status(name + ' erstellt.');
+  }
+  function ausgabe() { return LVXIO.baueAusgabe(lv.titel || 'Calcutron-LV-Extraktion', ergebnisse); }
+  const datum = () => new Date().toISOString().slice(0, 10);
+  $('exportBarebone').addEventListener('click', () => { const { zeilen } = ausgabe(); speichereDatei(`Barebone LV-Extraktion ${datum()}.xlsx`, LVXIO.schreibeBarebone(XLSX, zeilen, fav.info)); });
+  $('exportPruef').addEventListener('click', () => { const { pruef } = ausgabe(); speichereDatei(`Prüfliste LV-Extraktion ${datum()}.xlsx`, LVXIO.schreibePruefliste(XLSX, pruef)); });
+
+  // ---------- Start
+  (async () => {
+    const gespeichert = await idbGet('favoriten');
+    if (gespeichert && gespeichert.zeilen) fav = gespeichert;
+    baue(); favMeta(gespeichert ? 'lokal aktualisiert' : '');
+    fuelleVorgabe(); zeigeProfil();
+    setzeLv(window.LVX_BEISPIEL, 'Beispiel');
+  })();
+})();
+</script>
