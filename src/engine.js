@@ -895,15 +895,22 @@
   // ---------------------------------------------------------------- Positionen
 
   // Bestückungszeilen: „16 St. LS B16A 1-polig“, „16x LS …“, „- 4 Stück FI …“
-  function bestueckung(langtext) {
-    const zeilen = String(langtext || '').split(/\r?\n|;|•/);
-    const liste = [];
-    for (const z of zeilen) {
-      const r = z.match(/^\s*[-–*]?\s*(\d{1,3})\s?(?:st(?:ue?ck|k)?\.?|x|×)\s+(.{4,})$/i);
-      if (r) liste.push({ menge: parseInt(r[1], 10), text: r[2].trim() });
+  // Bestückungsangaben: „16 St. LS B16A“, „4x NH-Leiste Gr. 2“, „bestückt mit 2 Stück …, 4 Stück …“ – auch mitten in der Zeile
+  const BEST_EINHEIT = '(?:x|×|st(?:ück|ueck|uck|k)?[.§]?|stueck|stck[.§]?)';
+  function bestueckungTeile(langtext) {
+    // Punkte von Abkürzungen schützen, damit nur echte Satzenden trennen
+    const text = String(langtext || '').replace(/\b(St|ST|st|Stk|stk|Gr|gr|ca|inkl|bzw|Nr|Pos|Typ|Fabr|Art|max|min|z\.B|u\.a)\./g, '$1§');
+    const segmente = text.split(new RegExp('\\r?\\n|;|•|\\.\\s+(?=[A-ZÄÖÜ])|,(?=\\s*\\d{1,3}\\s?' + BEST_EINHEIT + '\\s)|\\s+und\\s+(?=\\d{1,3}\\s?' + BEST_EINHEIT + '\\s)', 'i'));
+    const re = new RegExp('(?:^|[\\s:(])[-–*]?\\s*(\\d{1,3})\\s?' + BEST_EINHEIT + '\\s+([A-Za-zÄÖÜäöü].{3,})$', 'i');
+    const liste = [], reste = [];
+    for (const z of segmente) {
+      const r = z.match(re);
+      if (r && parseInt(r[1], 10) > 0) { liste.push({ menge: parseInt(r[1], 10), text: r[2].trim().replace(/[.,]$/, '').replace(/§/g, '.') }); reste.push(z.slice(0, r.index)); }
+      else reste.push(z);
     }
-    return liste;
+    return { liste, rest: reste.join('\n').replace(/§/g, '.') };
   }
+  function bestueckung(langtext) { return bestueckungTeile(langtext).liste; }
 
   function teSchaetzung(erg) {
     const m = erg.m;
@@ -952,7 +959,7 @@
   function autoZusatz(pos, res, index, opts) {
     const h = res.haupt;
     if (!h || h.typ !== 'schrank' || !h.paket) return [];
-    const text = [pos.kurztext, pos.langtext].filter(Boolean).join('\n');
+    const text = [pos.kurztext, bestueckungTeile(pos.langtext).rest].filter(Boolean).join('\n');
     const t = norm(text);
     if (!/(einspeisefeld|kuppelfeld|abgangsfeld|sammelschienenfeld|sammelschienensystem|hauptsammelschiene|nshv|bauartnachweis|leistenfeld|nh-?trenner|nh-?leiste)/.test(t)) return [];
     const m = merkmale(text, 'schrank');
@@ -1081,11 +1088,12 @@
     const typGes = typKurz || merkmale(text).typ;
     if (best.length) {
       // Schrank: nur Text ohne Bestückungszeilen
-      const ohne = String(pos.langtext || '').split(/\r?\n|;|•/).filter(z => !/^\s*[-–*]?\s*\d{1,3}\s?(?:st(?:ue?ck|k)?\.?|x|×)\s+/i.test(z)).join('\n');
+      const ohne = bestueckungTeile(pos.langtext).rest;
       const schrankText = [pos.kurztext, ohne].filter(Boolean).join('\n');
-      if (merkmale(schrankText).typ === 'schrank' || typKurz === 'schrank') {
+      const typS = typKurz === 'nshv' ? 'nshv' : (merkmale(schrankText).typ === 'schrank' || typKurz === 'schrank') ? 'schrank' : null;
+      if (typS) {
         const te = res.unter.reduce((s, u) => s + u.menge * teSchaetzung(u.erg), 0);
-        res.haupt = gleicheAb(schrankText, index, { ...opts, teBedarf: te, typ: 'schrank', vorrang: hinweis });
+        res.haupt = gleicheAb(schrankText, index, { ...opts, teBedarf: te, typ: typS, vorrang: hinweis });
       }
     } else {
       // Kurztext bestimmt den Gerätetyp, Langtext liefert zusätzliche Merkmale

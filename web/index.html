@@ -153,6 +153,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   <div class="leiste">
     <label class="datei primaer" for="lvDatei">LV öffnen (.xlsx, .x83)<input id="lvDatei" type="file" accept=".xlsx,.x83,.X83,.xml"></label>
+    <button id="undoBtn" disabled title="Rückgängig (Strg+Z)">↶ Rückgängig</button>
+    <button id="redoBtn" disabled title="Wiederholen (Strg+Y)">↷ Wiederholen</button>
     <button id="neuBtn">Neues Projekt</button>
     <button id="beispielBtn">Beispiel-LV laden</button>
     <button id="auswahlBtn" disabled>Auswahl ändern</button>
@@ -370,6 +372,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       status(`Fertig: ${n} Positionen in ${((performance.now() - t0) / 1000).toFixed(1)} s abgeglichen – grün ${z.gruen}, gelb ${z.gelb}, rot ${z.rot}${z.manuell ? ', Platzhalter ' + z.manuell : ''}.`, 'ok');
       $('exportBarebone').disabled = $('exportPruef').disabled = false;
       autoSichern();
+      aufzeichnen();
     } catch (e) {
       status('Abbruch beim Abgleich: ' + (e && e.message || e) + '. Bitte die Datei und diese Meldung an Claude geben.', 'fehler');
     } finally {
@@ -727,6 +730,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     $('startBtn').disabled = an === 0;
     $('projSpeichern').disabled = false;
     autoSichern();
+    aufzeichnen();
   }
 
   function zeigeAuswahl(daten, name) {
@@ -803,6 +807,56 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       if (lv) rechne();
       status('Favoriten aktualisiert: ' + neu.join(', '), 'ok');
     } catch (err) { status('Favoriten ließen sich nicht einlesen: ' + err.message, 'fehler'); }
+  });
+
+  // ---------- Rückgängig / Wiederholen (Verlauf der Projektzustände)
+  let verlauf = [], vpos = -1, stellt = false;
+  const OHNE = new Set(['_offen', '_mark', '_suchBereich']);
+  const zustand = () => JSON.stringify({ lvVoll, abgleich: !!lv }, (k, v) => OHNE.has(k) ? undefined : v);
+  function aufzeichnen() {
+    if (stellt || !lvVoll) return;
+    const z = zustand();
+    if (vpos >= 0 && verlauf[vpos] === z) return;
+    verlauf = verlauf.slice(0, vpos + 1); verlauf.push(z);
+    if (verlauf.length > 150) verlauf.shift();
+    vpos = verlauf.length - 1;
+    undoKnoepfe();
+  }
+  function undoKnoepfe() { $('undoBtn').disabled = vpos <= 0; $('redoBtn').disabled = vpos >= verlauf.length - 1; }
+  function herstellen(i, wort) {
+    if (i < 0 || i >= verlauf.length) return;
+    const offen = new Map((lvVoll ? lvVoll.positionen : []).map(p => [p.oz, p._offen]));
+    const d = JSON.parse(verlauf[i]);
+    vpos = i; stellt = true;
+    try {
+      laufNr++;
+      lvVoll = d.lvVoll;
+      lvVoll.positionen.forEach(p => { if (offen.get(p.oz)) p._offen = true; });
+      $('auswahlBtn').disabled = false; $('projSpeichern').disabled = false;
+      zeigeBaum();
+      if (d.abgleich) {
+        const pos = lvVoll.positionen.filter(p => !p._aus);
+        lv = { ...lvVoll, positionen: pos };
+        $('auswahl').hidden = true;
+        $('quelleHinweis').textContent = quelleText(lvVoll, lvName) + ` · ${pos.length} von ${lvVoll.positionen.length} Positionen ausgewählt`;
+        rechne().then(() => { stellt = false; status(`${wort}: Schritt ${vpos + 1} von ${verlauf.length}.`, 'ok'); undoKnoepfe(); });
+      } else {
+        lv = null; ergebnisse = []; $('erg').textContent = ''; $('zahlen').textContent = '';
+        $('auswahl').hidden = false; stellt = false;
+        status(`${wort}: Schritt ${vpos + 1} von ${verlauf.length}.`, 'ok');
+      }
+    } catch (e) { stellt = false; status('Rückgängig nicht möglich: ' + e.message, 'fehler'); }
+    undoKnoepfe();
+  }
+  $('undoBtn').addEventListener('click', () => herstellen(vpos - 1, 'Rückgängig'));
+  $('redoBtn').addEventListener('click', () => herstellen(vpos + 1, 'Wiederholt'));
+  document.addEventListener('keydown', ev => {
+    if (!(ev.ctrlKey || ev.metaKey)) return;
+    const imFeld = ev.target.closest && ev.target.closest('input[type=text],input[type=search],input[type=number],textarea');
+    if (imFeld) return; // im Eingabefeld gilt das Rückgängig des Feldes
+    const k = ev.key.toLowerCase();
+    if (k === 'z' && !ev.shiftKey) { ev.preventDefault(); herstellen(vpos - 1, 'Rückgängig'); }
+    else if (k === 'y' || (k === 'z' && ev.shiftKey)) { ev.preventDefault(); herstellen(vpos + 1, 'Wiederholt'); }
   });
 
   // ---------- Zwischenablage für Zusätze
