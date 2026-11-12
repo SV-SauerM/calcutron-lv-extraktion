@@ -51,6 +51,10 @@ tr.unter td { background: color-mix(in srgb, var(--bg) 55%, var(--fl)); }
 tr.unter td.text { padding-left: 26px; }
 input.vorgabe { width: 100%; box-sizing: border-box; margin-top: 6px; font-size: 12.5px; padding: 4px 7px; }
 input.vorgabe:not(:placeholder-shown) { border-color: var(--akzent); background: color-mix(in srgb, var(--akzent) 8%, var(--fl)); }
+.vstat { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; }
+.vstat::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.vstat.ok { color: var(--gruen); } .vstat.ok::before { background: var(--gruen); }
+.vstat.nicht { color: var(--rot); font-weight: 500; } .vstat.nicht::before { background: var(--rot); }
 td.leer { text-align: center; color: var(--mut); padding: 40px 16px; }
 td.leer strong { display: block; color: var(--fg); font-weight: 500; margin-bottom: 4px; }
 td.oz, td.ext { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
@@ -368,6 +372,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
       inp.addEventListener('change', () => { pos._hinweis = inp.value.trim(); rechne(); });
       tdText.append(inp);
+      if (pos._hinweis && erg.vorgabe) tdText.append(el('div', { class: 'vstat ' + erg.vorgabe.status, text: erg.vorgabe.text, role: 'status' }));
     }
     tr.append(
       el('td', { class: 'oz', text: unter ? '' : pos.oz }),

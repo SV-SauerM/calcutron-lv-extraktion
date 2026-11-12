@@ -370,7 +370,9 @@
       const tx = [z.desc, z.notes].join(' \n ');
       schrankAlle.push({ ...z, pfad: pfad(z.los, z.pos), m: merkmale(tx, 'schrank'), hersteller: KATALOG[z.cat] || herstellerAusText(tx) || z.cat || '', such: norm(tx + ' ' + pfad(z.los, z.pos).slice(0, 3).join(' ')) });
     }
-    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle };
+    const nachExt = new Map();
+    for (const a of artikel.concat(schrankAlle)) { const k = kompakt(a.ext || ''); if (k && !nachExt.has(k)) nachExt.set(k, a); }
+    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt };
   }
 
   // ---------------------------------------------------------------- Abgleich
@@ -439,7 +441,45 @@
    * Gleicht einen Text (eine LV-Position oder eine Bestückungszeile) ab.
    * opts: {profil, herstellerVorgabe}
    */
+  // Codes in der Vorgabe (Artikel-/Typnummern wie HEE630, P630, h3+), ohne Merkmale
+  function vorgabeCodes(v) {
+    return tokens(v).filter(w => /[a-z]/.test(w) && /\d/.test(w) &&
+      !/^\d+(\.\d+)?(a|ka|ma|v|p|mm2?|ple|plz|te|m|s|w|x)$/.test(w) && !/^ip\d\d$/.test(w) && !/^[bcdk]-?\d{1,3}a?$/.test(w) &&
+      !/^\d(p|pol|polig)(\+n)?$/.test(w) && !/^los\d/.test(w) && !/^(nh|d0|gr|t|typ|sk|m)\d/.test(w) && !/^\d+x\d+/.test(w));
+  }
+  function textVon(a) { return norm([a.ext, a.desc, a.notes, (a.pfad || []).slice(0, 2).join(' ')].join(' ')).replace(/\s+/g, ' '); }
+  const kompakt = s => norm(s).replace(/[^a-z0-9+]/g, '');
+
   function gleicheAb(text, index, opts = {}) {
+    const vorrang = String(opts.vorrang || '').trim();
+    if (!vorrang) return gleicheAbKern(text, index, opts);
+    // Artikelnummer genau getroffen → diesen Artikel nehmen
+    const codes = vorgabeCodes(vorrang);
+    for (const c of codes) {
+      const hit = (index.nachExt || new Map()).get(kompakt(c));
+      if (hit && (!opts.losAktiv || opts.losAktiv(hit.los.split(' ')[0]))) {
+        const m = merkmale(text, opts.typ);
+        return { text, m, typ: hit.m.typ || m.typ, ampel: 'gruen', artikel: hit, paket: null, kandidaten: [hit],
+          hinweise: ['Vorgabe: ' + vorrang, `Artikel per Vorgabe: ${hit.hersteller} ${hit.ext}`], vorgabe: { status: 'ok', text: 'Artikel ' + hit.ext + ' gesetzt' } };
+      }
+    }
+    const out = gleicheAbKern(text, index, opts);
+    // Wurde die Vorgabe gefunden? Codes und Suchwörter müssen im gewählten Artikel vorkommen
+    const gew = out.artikel || (out.paket && out.paket.items[0]);
+    const pruefen = codes.concat(suchwoerter(vorrang).filter(w => !codes.includes(w)));
+    const original = w => { const r = vorrang.match(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')); return r ? r[0] : w; };
+    const fehlt = (gew ? pruefen.filter(w => !textVon(gew).includes(w) && !kompakt(textVon(gew)).includes(kompakt(w))) : pruefen).map(original);
+    if (!gew) out.vorgabe = { status: 'nicht', text: 'Kein Artikel gefunden' };
+    else if (fehlt.length) out.vorgabe = { status: 'nicht', text: 'Nicht gefunden: ' + fehlt.join(', ') };
+    else out.vorgabe = { status: 'ok', text: 'Vorgabe berücksichtigt' };
+    if (fehlt.length && gew) {
+      out.hinweise.push(`Vorgabe nicht gefunden: ${fehlt.join(', ')} – Auswahl ohne diesen Teil`);
+      if (out.ampel === 'gruen') out.ampel = 'gelb';
+    }
+    return out;
+  }
+
+  function gleicheAbKern(text, index, opts = {}) {
     const profil = opts.profil || PROFIL_STANDARD;
     const lv = merkmale(text, opts.typ);
     // Vorgabe des Bearbeiters (Hinweistext) geht vor den LV-Text: Typ und Merkmale überschreiben
@@ -525,6 +565,7 @@
     auswahl.sort((x, y) =>
       x.p.unbekannt.length - y.p.unbekannt.length ||
       x.a.prio - y.a.prio ||
+      (x.p.ueber.In || 0) - (y.p.ueber.In || 0) ||
       ueberSumme(x.p) - ueberSumme(y.p) ||
       MIN_KEYS.reduce((s, k) => s || ((x.a.m[k] || 0) - (y.a.m[k] || 0)), 0) ||
       y.score - x.score);
@@ -542,6 +583,7 @@
     if (fehlend.length) gelb.push('Merkmal fehlt im LV: ' + fehlend.join(', '));
     if (best.p.unbekannt.length) gelb.push('Merkmal am Favorit nicht lesbar: ' + best.p.unbekannt.join(', '));
     if (best.p.ersatz.length) gelb.push('Ersatz mit Abweichung: ' + best.p.ersatz.join(', '));
+    if (best.p.ueber.In && !best.p.ersatz.length) gelb.push(`Nennstrom höher als gefordert: ${best.a.m.In} A statt ${lv.In} A (kein Favorit mit ${lv.In} A)`);
 
     // Mehrdeutigkeit: zweiter Kandidat mit gleichen Merkmalen, aber anderem Artikel
     const zweit = auswahl[1];
