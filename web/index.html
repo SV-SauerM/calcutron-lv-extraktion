@@ -157,6 +157,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit) oder GAEB X83</div>
 
   <div class="status" id="status" role="status" aria-live="polite"></div>
+  <datalist id="standardtexte"></datalist>
 
   <section class="auswahl" id="auswahl" hidden>
     <div class="auswahlKopf">
@@ -391,6 +392,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const g = gewaehlt(e.haupt);
     const tr = el('tr', { class: 'haupt' + (pos._offen ? ' offen' : ''), tabindex: '0', 'aria-expanded': String(!!pos._offen) });
     const marken = el('div', { class: 'marken' });
+    if (pos._nurVorgabe && pos._hinweis) marken.append(el('span', { class: 'marke akz', text: 'nur Vorgabe' }));
     if (pos._hinweis) marken.append(el('span', { class: 'marke ' + (erg.vorgabe && erg.vorgabe.status === 'nicht' ? 'rot' : 'akz'), text: erg.vorgabe && erg.vorgabe.status === 'nicht' ? 'Vorgabe nicht gefunden' : 'Vorgabe' }));
     if (pos._hersteller) marken.append(el('span', { class: 'marke akz', text: pos._hersteller }));
     if (pos._wahl) marken.append(el('span', { class: 'marke akz', text: 'von Hand gewählt' }));
@@ -435,12 +437,11 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       el('td', { class: 'zahl', text: z.menge + ' je St.' }));
   }
 
-  function artikelListe(liste, aktion, knopf) {
+  function artikelListe(liste, aktionen) {
     const box = el('div', { class: 'liste' });
     for (const a of liste) {
-      const b = el('button', { type: 'button', text: knopf });
-      b.addEventListener('click', () => aktion(a));
-      box.append(el('div', { class: 'li' }, b, el('span', { class: 'ext', text: `${a.hersteller || ''} ${a.ext}` }), el('span', { class: 'ds', title: a.desc, text: String(a.desc).replace(/\n/g, ' ') }), el('span', { class: 'marke', text: String(a.los || '').split(' ')[0] })));
+      const knoepfe = aktionen.map(([knopf, aktion]) => { const b = el('button', { type: 'button', text: knopf }); b.addEventListener('click', () => aktion(a)); return b; });
+      box.append(el('div', { class: 'li' }, ...knoepfe, el('span', { class: 'ext', text: `${a.hersteller || ''} ${a.ext}` }), el('span', { class: 'ds', title: a.desc, text: String(a.desc).replace(/\n/g, ' ') }), el('span', { class: 'marke', text: String(a.los || '').split(' ')[0] })));
     }
     return box;
   }
@@ -463,6 +464,11 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
     inp.addEventListener('change', () => { pos._hinweis = inp.value.trim(); rechne(); });
     s2.append(inp);
+    const nvId = 'nv-' + pos.oz;
+    const nv = el('input', { type: 'checkbox', id: nvId });
+    nv.checked = !!pos._nurVorgabe;
+    nv.addEventListener('change', () => { pos._nurVorgabe = nv.checked; rechne(); });
+    s2.append(el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: nvId }, nv, 'Nur Vorgabe verwenden, LV-Text nicht auswerten')));
     if (pos._hinweis && erg.vorgabe) s2.append(el('div', { class: 'vstat ' + erg.vorgabe.status, text: erg.vorgabe.text, role: 'status' }));
 
     const zeileH = el('div', { class: 'feldzeile' });
@@ -478,10 +484,10 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const phId = 'ph-' + pos.oz;
     const ph = el('input', { type: 'checkbox', id: phId });
     ph.checked = !!pos._platzhalter;
-    const phText = el('input', { type: 'text', class: 'vorgabe', placeholder: 'Text des Platzhalters, z. B. nicht in unserem Lieferumfang', 'aria-label': 'Platzhaltertext' });
+    const phText = el('input', { type: 'text', class: 'vorgabe', list: 'standardtexte', placeholder: 'Text des Platzhalters (Liste: Standardtexte aus LOS01)', 'aria-label': 'Platzhaltertext' });
     phText.value = pos._platzhalterText || '';
     phText.hidden = !pos._platzhalter;
-    ph.addEventListener('change', () => { pos._platzhalter = ph.checked; if (ph.checked && !pos._platzhalterText) pos._platzhalterText = pos._hinweis || 'nicht in unserem Lieferumfang'; rechne(); });
+    ph.addEventListener('change', () => { pos._platzhalter = ph.checked; if (ph.checked && !pos._platzhalterText) pos._platzhalterText = 'Platzhalter'; rechne(); });
     phText.addEventListener('keydown', ev => { if (ev.key === 'Enter') phText.blur(); });
     phText.addEventListener('change', () => { pos._platzhalterText = phText.value.trim(); rechne(); });
     s2.append(el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: phId }, ph, 'Als Platzhalter übernehmen (keinen Artikel)')), phText);
@@ -495,18 +501,18 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const s3 = el('div');
     const kand = (erg.kandidaten || []).filter(k => k && k.ext);
     if (kand.length && !pos._platzhalter) {
-      s3.append(el('h4', { text: 'Kandidaten' }), artikelListe(kand, a => { pos._wahl = a.ext; rechne(); }, 'Nehmen'));
+      s3.append(el('h4', { text: 'Kandidaten' }), artikelListe(kand, [['Nehmen', a => { pos._wahl = LVX.schluessel(a); pos._platzhalter = false; rechne(); }]]));
     }
     s3.append(el('h4', { text: 'Zusatzartikel' }));
     const zl = el('div', { class: 'liste' });
     (pos._zusatz || []).forEach((z, i) => {
-      const a = (e.zusatz || []).find(x => x.ext === z.ext);
+      const a = (e.zusatz || []).find(x => (x.key || x.ext) === (z.key || z.ext));
       const m = el('input', { type: 'number', class: 'menge', min: '0', step: 'any', 'aria-label': 'Menge ' + z.ext });
       m.value = z.menge;
       m.addEventListener('change', () => { z.menge = Number(m.value) > 0 ? Number(m.value) : 1; rechne(); });
       const x = el('button', { type: 'button', text: 'Entfernen' });
       x.addEventListener('click', () => { pos._zusatz.splice(i, 1); rechne(); });
-      zl.append(el('div', { class: 'li' }, m, el('span', { class: 'ext', text: a ? `${a.artikel.hersteller} ${z.ext}` : z.ext }), el('span', { class: 'ds', text: a ? a.artikel.desc.replace(/\n/g, ' ') : 'nicht mehr in den Favoriten' }), x));
+      zl.append(el('div', { class: 'li' }, m, el('span', { class: 'ext', text: a ? `${a.artikel.hersteller} ${z.ext || ''}`.trim() : (z.ext || '') }), el('span', { class: 'ds', text: a ? a.artikel.desc.replace(/\n/g, ' ') : 'nicht mehr in den Favoriten' }), x));
     });
     if (!(pos._zusatz || []).length) zl.append(el('div', { class: 'hinweis', text: 'Noch keine. Über die Suche hinzufügen.' }));
     s3.append(zl);
@@ -522,9 +528,10 @@ details.profil summary { cursor: pointer; font-weight: 500; }
         if (q.length < 2) return;
         const t = LVX.suche(index, q, 12);
         if (!t.length) { sErg.append(el('div', { class: 'hinweis', text: 'Kein Favorit gefunden.' })); return; }
-        sErg.append(artikelListe(t, a => { pos._zusatz = (pos._zusatz || []).concat({ ext: a.ext, menge: 1 }); rechne(); }, '+ Zusatz'));
-        const als = el('div', { class: 'hinweis', text: 'Tipp: „+ Zusatz“ fügt eine weitere Unterposition hinzu. Als Hauptartikel setzt du einen Treffer über „Nehmen“ bei den Kandidaten oder per Artikelnummer im Vorgabefeld.' });
-        sErg.append(als);
+        sErg.append(artikelListe(t, [
+          ['Nehmen', a => { pos._wahl = LVX.schluessel(a); pos._platzhalter = false; rechne(); }],
+          ['+ Zusatz', a => { pos._zusatz = (pos._zusatz || []).concat({ key: LVX.schluessel(a), ext: a.ext, menge: 1 }); rechne(); }]]));
+        sErg.append(el('div', { class: 'hinweis', text: '„Nehmen“ ersetzt den Hauptartikel (ein Standardtext wird zum Platzhalter), „+ Zusatz“ fügt eine weitere Unterposition hinzu.' }));
       }, 200);
     });
     s3.append(el('h4', { text: 'Suche in den Favoriten' }), sInp, sErg);
@@ -759,6 +766,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (gespeichert && gespeichert.zeilen) fav = gespeichert;
     baue(); favMeta(gespeichert ? 'lokal aktualisiert' : '');
     fuelleVorgabe(); profilAufbauen(); zeigeProfil(); zeigeLose();
+    const dl = $('standardtexte'); dl.textContent = '';
+    for (const z of fav.zeilen.filter(z => z.typ === 'PLACEHOLDER')) dl.append(el('option', { value: String(z.desc).replace(/\s+/g, ' ').trim() }));
     neuesProjekt();
     status('Bereit. LV öffnen oder hierher ziehen.', 'ok');
   })();

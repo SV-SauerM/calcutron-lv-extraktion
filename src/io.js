@@ -182,6 +182,7 @@
   // ---------------------------------------------------------------- Ausgabe
 
   function produktZeile(pos, a, menge, notizZusatz) {
+    if (a.typ === 'PLACEHOLDER') return [pos, pos, 'PLACEHOLDER', a.desc, null, null, null, null, menge, null, null, null, a.notes || null];
     const zusatzNotiz = notizZusatz ? (a.notes ? a.notes + '\n' : '') + notizZusatz : a.notes;
     return [pos, pos, a.typ === 'SERVICE' ? 'SERVICE' : 'PRODUCT', a.desc, a.cat, a.ext,
       a.wage || 'Journeyman',

@@ -375,9 +375,22 @@
       const tx = [z.desc, z.notes].join(' \n ');
       schrankAlle.push({ ...z, pfad: pfad(z.los, z.pos), m: merkmale(tx, 'schrank'), hersteller: KATALOG[z.cat] || herstellerAusText(tx) || z.cat || '', such: norm(tx + ' ' + pfad(z.los, z.pos).slice(0, 3).join(' ')) });
     }
+    // Alle Favoritenzeilen (auch Platzhalter-Standardtexte und Leistungen ohne Artikelnummer) für Suche und Handauswahl
+    const alleFav = [];
     const nachExt = new Map();
-    for (const a of artikel.concat(schrankAlle)) { const k = kompakt(a.ext || ''); if (k && !nachExt.has(k)) nachExt.set(k, a); }
-    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt };
+    for (const a of artikel.concat(schrankAlle)) { const k = schluessel(a); if (!nachExt.has(k)) nachExt.set(k, a); }
+    for (const z of favoriten) {
+      if (z.typ === 'GROUP') continue;
+      const k = schluessel(z);
+      let a = nachExt.get(k);
+      if (!a) {
+        const p = pfad(z.los, z.pos);
+        a = { ...z, pfad: p, m: {}, hersteller: KATALOG[z.cat] || herstellerAusText([z.desc, z.notes].join(' ')) || z.cat || (z.typ === 'PLACEHOLDER' ? 'Text' : '') };
+        nachExt.set(k, a);
+      }
+      if (!alleFav.includes(a)) alleFav.push(a);
+    }
+    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt, alleFav };
   }
 
   // ---------------------------------------------------------------- Abgleich
@@ -454,6 +467,8 @@
   }
   function textVon(a) { return norm([a.ext, a.desc, a.notes, (a.pfad || []).slice(0, 2).join(' ')].join(' ')).replace(/\s+/g, ' '); }
   const kompakt = s => norm(s).replace(/[^a-z0-9+]/g, '');
+  // Eindeutiger Schlüssel eines Favoriten: Ext. ID, sonst Los + Position (Platzhalter, Leistungen)
+  const schluessel = a => (a.ext ? kompakt(a.ext) : 'pos:' + String(a.los).split(' ')[0] + '|' + a.pos);
 
   function gleicheAb(text, index, opts = {}) {
     const vorrang = String(opts.vorrang || '').trim();
@@ -848,10 +863,10 @@
     const res0 = verarbeitePositionAuto(pos, index, opts);
     const res = res0;
     // Zusatzartikel (von Hand ergänzt)
-    res.zusatz = (pos._zusatz || []).map(z => ({ artikel: (index.nachExt || new Map()).get(kompakt(z.ext)), menge: z.menge || 1, ext: z.ext })).filter(z => z.artikel);
+    res.zusatz = (pos._zusatz || []).map(z => ({ artikel: (index.nachExt || new Map()).get(z.key || kompakt(z.ext)), menge: z.menge || 1, ext: z.ext, key: z.key })).filter(z => z.artikel);
     // Platzhalter: nichts übernehmen, nur Text
     if (pos._platzhalter) {
-      const txt = String(pos._platzhalterText || '').trim() || 'OFFEN: ' + String(pos.kurztext || '').slice(0, 60);
+      const txt = String(pos._platzhalterText || '').trim() || 'Platzhalter';
       res.haupt = { text: pos.kurztext, m: {}, typ: null, ampel: 'manuell', artikel: null, paket: null, kandidaten: res.haupt ? res.haupt.kandidaten : [], placeholder: txt, hinweise: ['Platzhalter (von Hand): ' + txt], manuell: true };
       res.unter = [];
       res.ampel = 'manuell';
@@ -859,8 +874,11 @@
     }
     // Artikel von Hand gewählt (aus Kandidaten oder Suche)
     if (pos._wahl && res.haupt) {
-      const a = (index.nachExt || new Map()).get(kompakt(pos._wahl));
-      if (a) {
+      const a = (index.nachExt || new Map()).get(pos._wahl);
+      if (a && a.typ === 'PLACEHOLDER') {
+        res.haupt = { text: pos.kurztext, m: {}, typ: null, ampel: 'manuell', artikel: null, paket: null, kandidaten: res.haupt.kandidaten, placeholder: a.desc, hinweise: ['Standardtext aus ' + String(a.los).split(' ')[0] + ': ' + a.desc], manuell: true };
+        res.unter = []; res.ampel = 'manuell';
+      } else if (a) {
         res.haupt = { ...res.haupt, artikel: a, paket: null, ampel: 'gruen', hinweise: [`Von Hand gewählt: ${a.hersteller} ${a.ext}`] };
         const alle = [res.haupt, ...res.unter.map(u => u.erg)];
         res.ampel = alle.some(e => e.ampel === 'rot') ? 'rot' : alle.some(e => e.ampel === 'gelb') ? 'gelb' : 'gruen';
@@ -870,6 +888,15 @@
   }
 
   function verarbeitePositionAuto(pos, index, opts = {}) {
+    if (pos._nurVorgabe && String(pos._hinweis || '').trim()) {
+      // Nur die Vorgabe zählt, der LV-Text wird nicht ausgewertet
+      const v = String(pos._hinweis).trim();
+      const h = herstellerAusText(v);
+      const o = { ...opts, herstellerVorgabe: pos._hersteller ? opts.herstellerVorgabe : (h || opts.herstellerVorgabe) };
+      const haupt = gleicheAb(v, index, { ...o, vorrang: v });
+      haupt.hinweise.unshift('Nur Vorgabe, LV-Text nicht ausgewertet');
+      return { pos, haupt, unter: [], ampel: haupt.ampel };
+    }
     const text = [pos.kurztext, pos.langtext].filter(Boolean).join('\n');
     const hinweis = String(pos._hinweis || '').trim();
     if (hinweis) {
@@ -912,12 +939,12 @@
     const k = kompakt(q);
     const treffer = [];
     const gesehen = new Set();
-    for (const a of index.artikel.concat(index.schrankAlle || [])) {
-      const key = a.cat + '|' + a.ext;
+    for (const a of index.alleFav || index.artikel) {
+      const key = schluessel(a);
       if (gesehen.has(key)) continue;
       const t = a._such || (a._such = textVon(a));
       const extTreffer = k.length >= 3 && kompakt(a.ext || '').startsWith(k);
-      if (extTreffer || w.every(x => t.includes(x))) { treffer.push({ a, rang: extTreffer ? 0 : 1 }); gesehen.add(key); }
+      if (extTreffer || w.every(x => t.includes(x))) { treffer.push({ a, rang: extTreffer ? 0 : (t.includes(norm(q).trim()) ? 1 : 2) }); gesehen.add(key); }
     }
     treffer.sort((x, y) => x.rang - y.rang || String(x.a.desc).length - String(y.a.desc).length);
     return treffer.slice(0, max).map(x => x.a);
@@ -925,6 +952,6 @@
 
   return {
     KATALOG, TYPEN, TYP_NAME, KATEGORIE, PROFIL_STANDARD, PFLICHT,
-    norm, tokens, merkmale, merkmalText, signatur, typErkennen, baueIndex, gleicheAb, bestueckung, verarbeitePosition, suche, kompakt
+    norm, tokens, merkmale, merkmalText, signatur, typErkennen, baueIndex, gleicheAb, bestueckung, verarbeitePosition, suche, kompakt, schluessel
   };
 });
