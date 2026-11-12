@@ -243,7 +243,7 @@
       zeilen.push(gruppenZeile(gpos, `${p.oz} ${p.kurztext}`.slice(0, 250), p.menge || 1, p.langtext || null));
       let k = 0;
       if (e.haupt) schreibe(gpos + '.' + (++k), e.haupt, Number(p._menge) > 0 ? Number(p._menge) : 1, p.oz, p.kurztext, e.unter.length ? null : p.referenz);
-      for (const u of e.unter) schreibe(gpos + '.' + (++k), u.erg, u.menge, p.oz, u.erg.text, null);
+      for (const u of e.unter) { if (!u.aus) schreibe(gpos + '.' + (++k), u.erg, u.menge, p.oz, u.erg.text, null); }
       for (const z of (e.zusatz || []).filter(z => z.gruppe)) {
         // Favoritengruppe mit allen Unterzeilen; Gruppenmenge = eingetragene Menge (z. B. Länge in m)
         const gp = gpos + '.' + (++k);

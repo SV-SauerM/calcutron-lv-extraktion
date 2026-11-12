@@ -1078,10 +1078,26 @@
     const best = bestueckung(pos.langtext);
     const res = { pos, haupt: null, unter: [] };
     if (best.length) {
-      for (const b of best) {
-        const e = gleicheAb(b.text, index, opts);
-        res.unter.push({ menge: b.menge, erg: e });
-      }
+      const ktx = norm([pos.kurztext, pos.langtext].join(' '));
+      best.forEach((b, i) => {
+        const ov = (pos._best || {})[i] || {};
+        const menge = Number(ov.menge) > 0 ? Number(ov.menge) : b.menge;
+        if (ov.aus) { res.unter.push({ idx: i, menge, aus: true, erg: { text: b.text, m: {}, ampel: 'manuell', hinweise: ['Entfernt (von Hand)'], kandidaten: [] } }); return; }
+        // Gerätetyp aus dem Positionstext erben, wenn die Zeile nur eine Größe nennt (z. B. „NH2 (400A)“)
+        let typ;
+        const mb = merkmale(b.text);
+        if (!mb.typ && mb.nh) typ = /185\s?mm|leiste/.test(ktx) ? 'nh_leiste' : /lasttrenn|trenner/.test(ktx) ? 'nh_trenner' : 'nh_leiste';
+        else if (!mb.typ && mb.sich && /^D0/.test(mb.sich)) typ = 'sockel';
+        let e = gleicheAb(b.text, index, { ...opts, typ, vorrang: ov.hinweis || '' });
+        if (typ && !e.hinweise.some(h => /Typ aus Position/.test(h))) e.hinweise.unshift(`Typ aus Position übernommen: ${TYP_NAME[typ]}`);
+        if (ov.platzhalter) e = { text: b.text, m: e.m, ampel: 'manuell', placeholder: ov.platzhalterText || 'Platzhalter', hinweise: ['Platzhalter (von Hand)'], kandidaten: e.kandidaten };
+        else if (ov.wahl) {
+          const a = (index.nachExt || new Map()).get(ov.wahl);
+          if (a && a.typ === 'PLACEHOLDER') e = { text: b.text, m: e.m, ampel: 'manuell', placeholder: a.desc, hinweise: ['Standardtext (von Hand)'], kandidaten: e.kandidaten };
+          else if (a) e = { ...e, artikel: a, paket: null, ampel: 'gruen', hinweise: [`Von Hand gewählt: ${a.hersteller} ${a.ext}`] };
+        }
+        res.unter.push({ idx: i, menge, erg: e });
+      });
     }
     // Hauptgerät / Schrank
     const typKurz = merkmale(pos.kurztext || '').typ;
@@ -1100,7 +1116,7 @@
       res.haupt = gleicheAb(text, index, { ...opts, typ: typKurz || undefined, vorrang: hinweis });
     }
     // Gesamtampel
-    const alle = [res.haupt, ...res.unter.map(u => u.erg)].filter(Boolean);
+    const alle = [res.haupt, ...res.unter.filter(u => !u.aus).map(u => u.erg)].filter(Boolean).filter(e => e.ampel !== 'manuell');
     res.ampel = alle.some(e => e.ampel === 'rot') ? 'rot' : alle.some(e => e.ampel === 'gelb') ? 'gelb' : (alle.length ? 'gruen' : 'rot');
     return res;
   }

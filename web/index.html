@@ -415,7 +415,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (pos._hersteller) marken.append(el('span', { class: 'marke akz', text: pos._hersteller }));
     if (pos._wahl) marken.append(el('span', { class: 'marke akz', text: 'von Hand gewählt' }));
     if ((pos._zusatz || []).length) marken.append(el('span', { class: 'marke akz', text: `+${pos._zusatz.length} Zusatz` }));
-    if (e.unter.length) marken.append(el('span', { class: 'marke', text: `${e.unter.length} Bestückungszeilen` }));
+    if (e.unter.length) marken.append(el('span', { class: 'marke', text: `${e.unter.filter(u => !u.aus).length} Bestückungszeilen` }));
     const nHin = (erg.hinweise || []).filter(h => !/^Vorgabe:/.test(h)).length;
     if (nHin) marken.append(el('span', { class: 'marke', text: `${nHin} Hinweis${nHin > 1 ? 'e' : ''}` }));
     const tdText = el('td', { class: 'text' }, el('div', { class: 'kurz', text: pos.kurztext }), marken);
@@ -436,14 +436,84 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     return tr;
   }
 
-  function unterZeile(u) {
+  function unterZeile(pos, u) {
     const g = gewaehlt(u.erg);
-    return el('tr', { class: 'unter' },
-      el('td'), el('td'),
-      el('td', {}, el('span', { class: 'ampel ' + u.erg.ampel, text: AMPEL[u.erg.ampel] })),
-      el('td', { class: 'text', text: `${u.menge} × ${u.erg.text}` }),
-      el('td', { class: 'gew' }, g ? el('div', { class: 'ext', text: `${g.hersteller} ${g.ext}` }) : el('div', { class: 'desc', text: '—' }), g ? el('div', { class: 'desc', text: g.desc.replace(/\n/g, ' ') }) : ''),
+    const offen = !!(pos._bestOffen && pos._bestOffen[u.idx]);
+    const ov = (pos._best || {})[u.idx] || {};
+    const marken = el('div', { class: 'marken' });
+    if (ov.hinweis) marken.append(el('span', { class: 'marke ' + (u.erg.vorgabe && u.erg.vorgabe.status === 'nicht' ? 'rot' : 'akz'), text: 'Vorgabe' }));
+    if (ov.wahl) marken.append(el('span', { class: 'marke akz', text: 'von Hand gewählt' }));
+    if (ov.menge) marken.append(el('span', { class: 'marke akz', text: 'Menge geändert' }));
+    const tr = el('tr', { class: 'unter haupt' + (offen ? ' offen' : ''), tabindex: '0', 'aria-expanded': String(offen) },
+      el('td', { class: 'pfeil', text: offen ? '▾' : '▸' }), el('td'),
+      el('td', {}, el('span', { class: 'ampel ' + (u.aus ? 'manuell' : u.erg.ampel), text: u.aus ? 'entfernt' : AMPEL[u.erg.ampel] })),
+      el('td', { class: 'text' }, el('div', { class: 'kurz', style: u.aus ? 'text-decoration: line-through' : '', text: `${u.menge} × ${u.erg.text}` }), marken),
+      el('td', { class: 'gew' }, u.erg.ampel === 'manuell' && u.erg.placeholder ? el('div', { text: u.erg.placeholder }) : (g ? el('div', { class: 'ext', text: `${g.hersteller} ${g.ext}` }) : el('div', { class: 'desc', text: '—' })), g ? el('div', { class: 'desc', text: g.desc.replace(/\n/g, ' ') }) : ''),
       el('td', { class: 'zahl', text: u.menge + ' je St.' }));
+    const um = () => { pos._bestOffen = pos._bestOffen || {}; pos._bestOffen[u.idx] = !offen; zeigeErgebnis(); };
+    tr.addEventListener('click', ev => { if (!ev.target.closest('input,select,button,a')) um(); });
+    tr.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); um(); } });
+    return tr;
+  }
+
+  // Suchfeld mit Trefferliste; aktionen(a) liefert die Knöpfe je Treffer
+  function suchWidget(idBasis, bereichStart, aktionen) {
+    const box = el('div');
+    const inp = el('input', { type: 'search', class: 'vorgabe', id: idBasis, placeholder: 'Favoriten durchsuchen: Text oder Artikelnummer', 'aria-label': 'Favoriten durchsuchen' });
+    const erg = el('div');
+    let tmr = null;
+    inp.addEventListener('input', () => {
+      clearTimeout(tmr);
+      tmr = setTimeout(() => {
+        erg.textContent = '';
+        const q = inp.value.trim();
+        if (q.length < 2) return;
+        const t = LVX.suche(index, q, 15, bereichStart);
+        if (!t.length) { erg.append(el('div', { class: 'hinweis', text: 'Kein Favorit gefunden.' })); return; }
+        erg.append(artikelListe(t, aktionen(null)));
+      }, 200);
+    });
+    box.append(inp, erg);
+    return box;
+  }
+
+  function unterDetail(pos, u) {
+    pos._best = pos._best || {};
+    const ov = pos._best[u.idx] || (pos._best[u.idx] = {});
+    const id = `b-${pos.oz}-${u.idx}`;
+    const sp = el('div', { class: 'dgrid' });
+    const s1 = el('div');
+    s1.append(el('h4', { text: 'Bestückungszeile' }), el('div', { class: 'langtext', text: `${u.menge} × ${u.erg.text}` }));
+    s1.append(el('h4', { text: 'Erkannt' }), el('div', { class: 'merk', text: (u.erg.typ ? LVX.TYP_NAME[u.erg.typ] + ' · ' : '') + LVX.merkmalText(u.erg.m || {}) || '—' }));
+    if ((u.erg.hinweise || []).length) s1.append(el('h4', { text: 'Hinweise' }), hinweisListe(u.erg));
+    const s2 = el('div');
+    const vg = el('input', { type: 'text', class: 'vorgabe', id: id + '-v', placeholder: 'Vorgabe, geht vor Zeilentext (z. B. kurz M12 · Artikelnummer)', 'aria-label': 'Vorgabe für Bestückungszeile' });
+    vg.value = ov.hinweis || '';
+    vg.addEventListener('keydown', ev => { if (ev.key === 'Enter') vg.blur(); });
+    vg.addEventListener('change', () => { ov.hinweis = vg.value.trim(); rechne(); });
+    s2.append(el('h4', { text: 'Vorgabe' }), vg);
+    if (ov.hinweis && u.erg.vorgabe) s2.append(el('div', { class: 'vstat ' + u.erg.vorgabe.status, text: u.erg.vorgabe.text }));
+    const mi = el('input', { type: 'number', class: 'menge', id: id + '-m', min: '0', step: 'any' });
+    mi.value = u.menge;
+    mi.addEventListener('change', () => { ov.menge = Number(mi.value) > 0 ? Number(mi.value) : null; rechne(); });
+    const ph = el('input', { type: 'checkbox', id: id + '-p' });
+    ph.checked = !!ov.platzhalter;
+    ph.addEventListener('change', () => { ov.platzhalter = ph.checked; if (ph.checked && !ov.platzhalterText) ov.platzhalterText = 'Platzhalter'; rechne(); });
+    const phT = el('input', { type: 'text', class: 'vorgabe', list: 'standardtexte', 'aria-label': 'Platzhaltertext' });
+    phT.value = ov.platzhalterText || ''; phT.hidden = !ov.platzhalter;
+    phT.addEventListener('change', () => { ov.platzhalterText = phT.value.trim(); rechne(); });
+    const weg = el('button', { type: 'button', text: ov.aus ? 'Wiederherstellen' : 'Zeile entfernen' });
+    weg.addEventListener('click', () => { ov.aus = !ov.aus; rechne(); });
+    const zeile = el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: id + '-m', text: 'Menge je LV-Stück' }), mi, weg);
+    if (ov.wahl) { const z = el('button', { type: 'button', text: 'Automatische Auswahl' }); z.addEventListener('click', () => { ov.wahl = null; rechne(); }); zeile.append(z); }
+    s2.append(el('h4', { text: 'Auswahl' }), zeile, el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: id + '-p' }, ph, 'Als Platzhalter übernehmen (keinen Artikel)')), phT);
+    const s3 = el('div');
+    const nehmen = a => [['Nehmen', x => { ov.wahl = LVX.schluessel(x); ov.platzhalter = false; ov.aus = false; rechne(); }]];
+    const kand = (u.erg.kandidaten || []).filter(k => k && (k.ext || k.typ === 'PLACEHOLDER'));
+    if (kand.length) s3.append(el('h4', { text: 'Kandidaten' }), artikelListe(kand, nehmen(null)));
+    s3.append(el('h4', { text: 'Suche in den Favoriten' }), suchWidget(id + '-s', 'artikel', nehmen));
+    sp.append(s1, s2, s3);
+    return el('tr', { class: 'detail' }, el('td', { colspan: '6' }, sp));
   }
 
   function zusatzZeile(z) {
@@ -618,7 +688,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
         refFeld = el('div', { class: 'ref ' + (ok ? 'ok' : 'nok'), text: (ok ? '✓ wie Referenz ' : '✗ Referenz ') + p.referenz.join('/') });
       }
       tb.append(kopfZeile(e, refFeld));
-      for (const u of e.unter) tb.append(unterZeile(u));
+      for (const u of e.unter) { tb.append(unterZeile(p, u)); if (p._bestOffen && p._bestOffen[u.idx]) tb.append(unterDetail(p, u)); }
       for (const zz of e.zusatz || []) tb.append(zusatzZeile(zz));
       if (p._offen) tb.append(detailZeile(e));
     }
@@ -811,7 +881,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   // ---------- Rückgängig / Wiederholen (Verlauf der Projektzustände)
   let verlauf = [], vpos = -1, stellt = false;
-  const OHNE = new Set(['_offen', '_mark', '_suchBereich']);
+  const OHNE = new Set(['_offen', '_mark', '_suchBereich', '_bestOffen']);
   const zustand = () => JSON.stringify({ lvVoll, abgleich: !!lv }, (k, v) => OHNE.has(k) ? undefined : v);
   function aufzeichnen() {
     if (stellt || !lvVoll) return;
