@@ -245,6 +245,9 @@
     // Bauart Leistungsschalter: offen (ACB) / kompakt (MCCB)
     if (/\bacb\b|offene?n? bauweise|luftleistungsschalter|offener leistungsschalter|\bhw[1-4]\b|izmx/.test(t)) m.bauart = 'offen';
     else if (/\bmccb\b|kompaktbauweise|kompakt-?leistungsschalter|\bh3\+|\bh(?:250|400|630|1000|1600)\b|\bnzm/.test(t)) m.bauart = 'kompakt';
+    if (/einschub|ausfahrbar/.test(t)) m.einbau = 'einschub'; else if (/festeinbau|fest eingebaut/.test(t)) m.einbau = 'fest';
+    if ((r = t.match(/icw\s*(?:\(1s\))?\s*[=:]?\s*(\d{1,3})\s?ka/))) m.icw = num(r[1]);
+    else if ((r = t.match(/icw1s\s?=?\s?(\d{1,3})\s?ka/))) m.icw = num(r[1]);
     // Gewinde
     if ((r = t.match(/\bm\s?(12|16|20|25|32|40|50|63)\b/))) m.gewinde = 'M' + r[1];
     // Form (NSHV)
@@ -412,7 +415,18 @@
         gruppenListe.push(gr); nachGruppe.set(gr.key, gr);
       }
     }
-    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt, alleFav, gruppen: gruppenListe, nachGruppe };
+    // Leistungsschalter als Favoritengruppen (z. B. Hager HW1–4: Schalter mit Zubehör) aus LOS06
+    const lswGruppen = [];
+    for (const g of gruppenListe) {
+      if (!/^LOS06/.test(g.los) || !g.blatt || !/leistungsschalter/i.test(g.desc)) continue;
+      const tx = g.desc + ' \n ' + g.pfad.slice(0, 2).join(' \n ');
+      const m = merkmale(tx, 'lsw');
+      const tn = norm(tx);
+      if (/offen/.test(tn) || /\bhw\d/.test(tn)) m.bauart = 'offen'; else if (/kompakt/.test(tn)) m.bauart = 'kompakt';
+      const h = /hager|\bhw\d|\bh3/.test(norm(g.pfad.join(' '))) ? 'Hager' : /eaton|izmx|nzm/.test(norm(g.pfad.join(' '))) ? 'Eaton' : /siemens|3wl|3wa/.test(norm(g.pfad.join(' '))) ? 'Siemens' : (g.hersteller || '').split('/')[0];
+      lswGruppen.push({ ...g, m, hersteller: h, tok: new Set(tokens(tx)), prio: 0, cat: null, time: 0 });
+    }
+    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt, alleFav, gruppen: gruppenListe, nachGruppe, lswGruppen };
   }
 
   // ---------------------------------------------------------------- Abgleich
@@ -581,6 +595,14 @@
       const vt = new Set(tokens(vorrang));
       geprueft.push({ a, p, score: jaccard(new Set(tokens(text + ' ' + vorrang)), a.tok) + (vt.size ? 0.5 * jaccard(vt, a.tok) : 0) });
     }
+    if (lv.typ === 'lsw' && index.lswGruppen) {
+      for (const g of index.lswGruppen) {
+        if (!losAktiv('LOS06')) break;
+        const p = pruefe(lv, g, 'lsw');
+        if (!p.ok) continue;
+        geprueft.push({ a: g, p, score: jaccard(new Set(tokens(text + ' ' + vorrang)), g.tok) });
+      }
+    }
     // Streng: Pflichtmerkmale, die das LV nennt, müssen am Favorit lesbar sein
     const pflichtLv = (PFLICHT[lv.typ] || []).filter(k => lv[k] != null);
     const streng = geprueft.filter(g => !g.p.unbekannt.some(k => pflichtLv.includes(k)));
@@ -620,15 +642,18 @@
       x.a.prio - y.a.prio ||
       (x.p.ueber.In || 0) - (y.p.ueber.In || 0) ||
       (lv.bauart ? (x.a.m.bauart && x.a.m.bauart !== lv.bauart ? 1 : 0) - (y.a.m.bauart && y.a.m.bauart !== lv.bauart ? 1 : 0) : 0) ||
+      (lv.einbau ? (x.a.m.einbau && x.a.m.einbau !== lv.einbau ? 1 : 0) - (y.a.m.einbau && y.a.m.einbau !== lv.einbau ? 1 : 0) : 0) ||
+      (lv.typ === 'lsw' ? (y.a._gruppe ? 1 : 0) - (x.a._gruppe ? 1 : 0) : 0) ||
       ueberSumme(x.p) - ueberSumme(y.p) ||
       MIN_KEYS.reduce((s, k) => s || ((x.a.m[k] || 0) - (y.a.m[k] || 0)), 0) ||
       y.score - x.score);
 
     // Dubletten (gleiche Ext. ID in mehreren Losen) entfernen
     const gesehen = new Set();
-    auswahl = auswahl.filter(g => { const k = g.a.cat + '|' + g.a.ext; if (gesehen.has(k)) return false; gesehen.add(k); return true; });
+    auswahl = auswahl.filter(g => { const k = g.a._gruppe ? g.a.key : g.a.cat + '|' + g.a.ext; if (gesehen.has(k)) return false; gesehen.add(k); return true; });
     const best = auswahl[0];
-    out.artikel = best.a;
+    if (best.a._gruppe) out.paket = { desc: best.a.desc, notes: best.a.notes, items: best.a.zeilen.filter(z => z.typ !== 'GROUP'), hersteller: best.a.hersteller, pfad: best.a.pfad, m: best.a.m, gruppe: best.a };
+    else out.artikel = best.a;
     out.kandidaten = auswahl.slice(0, 5).map(g => g.a);
 
     // Ampel
@@ -652,7 +677,8 @@
       }
     }
     if (lv.lose) gelb.push('PL: lose Lieferung – Zeit prüfen');
-    if (best.a.time == null || best.a.time === '') gelb.push('PL: Zeit fehlt');
+    if (!best.a._gruppe && (best.a.time == null || best.a.time === '')) gelb.push('PL: Zeit fehlt');
+    if (best.a._gruppe) out.hinweise.push(`Leistungsschalter-Gruppe aus LOS06: ${best.a.pfad[0] || ''} / ${best.a.desc}`);
     out.hinweise.push(...gelb);
     out.ampel = (gelb.length || fallback) ? 'gelb' : 'gruen';
     return out;
@@ -892,9 +918,62 @@
   /**
    * Verarbeitet eine LV-Position {oz, kurztext, langtext, menge, einheit}
    */
+  // Automatische Zusätze für Schaltfelder aus LOS03.1: Hauptsammelschiene (LOS04, Länge = Feldbreite),
+  // Leistungsschalter laut Langtext (LOS06) und Feldverteilschiene bei Einspeisefeldern
+  function autoZusatz(pos, res, index, opts) {
+    const h = res.haupt;
+    if (!h || h.typ !== 'schrank' || !h.paket) return [];
+    const text = [pos.kurztext, pos.langtext].filter(Boolean).join('\n');
+    const t = norm(text);
+    if (!/(einspeisefeld|kuppelfeld|abgangsfeld|sammelschienenfeld|sammelschienensystem|hauptsammelschiene|nshv|bauartnachweis)/.test(t)) return [];
+    const m = merkmale(text, 'schrank');
+    const In = m.In || 0;
+    if (In < 250) return [];
+    const out = [];
+    const pole = /5-?polig|l1\s?-\s?l3\s?,\s?n\s?,\s?pe/.test(t) ? 5 : /4-?polig/.test(t) ? 4 : /3-?polig/.test(t) ? 3 : 5;
+    const icw = m.icw || 0;
+    const breite = m.mass ? m.mass.b : (m.bxt ? m.bxt.b : null);
+    const losAktiv = opts.losAktiv || (() => true);
+    const schiene = (art, pol, minIn) => {
+      const liste = (index.gruppen || []).filter(g => /^LOS04/.test(g.los) && losAktiv('LOS04') && g.blatt && new RegExp(art, 'i').test(g.desc) && !/belastet/i.test(g.pfad.join(' ')) && new RegExp('\\b' + pol + '\\s?pol', 'i').test(g.desc))
+        .map(g => { const n = norm(g.desc); const a = n.match(/(\d{2,4})\s?a\b/); const k = n.match(/icw1s\s?=\s?(\d{1,3})\s?ka/); return { g, In: a ? num(a[1]) : 0, icw: k ? num(k[1]) : null }; })
+        .filter(x => x.In >= minIn && (!icw || x.icw == null || x.icw >= icw))
+        .sort((x, y) => x.In - y.In);
+      return liste[0] || null;
+    };
+    const hss = schiene('hauptsammelschiene', pole, In);
+    if (hss) out.push({ key: hss.g.key, menge: breite ? breite / 1000 : 1, auto: true,
+      grund: `Hauptsammelschiene ${hss.In} A ${pole}-polig${hss.icw ? ', Icw ' + hss.icw + ' kA' : ''}; Länge ${breite ? '= Feldbreite ' + (breite / 1000).toLocaleString('de-DE') + ' m' : '1 m angesetzt – PL: Länge festlegen'}${/5-?polig|l1/.test(t) ? '' : ' (Polzahl nicht im LV, 5-polig angesetzt)'}` });
+    // Leistungsschalter laut Langtext
+    const r = t.match(/(?:inkl\.?|inklusive|mit)\s+(?:einem?\s+)?((?:offene[nmrs]?\s+|kompakt-?)?leistungsschalter[^.;\n]*)/);
+    let lsIn = 0;
+    if (r) {
+      const satz = r[1] + (icw ? ` ${icw} ka` : '') + (/3-?phasig/.test(t) && !/[34]-?polig/.test(r[1]) ? ' 3-polig' : '');
+      const e = gleicheAb(satz, index, { ...opts, typ: 'lsw', vorrang: '' });
+      const ziel = e.paket && e.paket.gruppe ? e.paket.gruppe.key : (e.artikel ? schluessel(e.artikel) : null);
+      if (ziel) {
+        lsIn = (e.paket && e.paket.m && e.paket.m.In) || (e.artikel && e.artikel.m && e.artikel.m.In) || In;
+        out.push({ key: ziel, ext: e.artikel ? e.artikel.ext : null, menge: 1, auto: true, grund: `Leistungsschalter laut LV-Text: ${e.paket ? e.paket.desc + ' (' + (e.paket.pfad[0] || '') + ')' : e.artikel.desc}` });
+      }
+    }
+    // Feldverteilschiene im Einspeisefeld
+    if (lsIn && /einspeis/.test(t)) {
+      const fvs = schiene('feldverteilschiene', pole === 5 ? 3 : pole, lsIn);
+      if (fvs) out.push({ key: fvs.g.key, menge: 1, auto: true, grund: `Feldverteilschiene ${fvs.In} A; 1 m angesetzt – PL: Länge festlegen` });
+    }
+    return out;
+  }
+
   function verarbeitePosition(pos, index, opts = {}) {
     const res0 = verarbeitePositionAuto(pos, index, opts);
     const res = res0;
+    if (!pos._autoErledigt && !pos._platzhalter && index.gruppen) {
+      const auto = autoZusatz(pos, res, index, opts);
+      pos._zusatz = auto.concat(pos._zusatz || []);
+      pos._autoErledigt = true;
+    }
+    const autoListe = (pos._zusatz || []).filter(z => z.auto);
+    if (autoListe.length && res.haupt) res.haupt.hinweise = res.haupt.hinweise.concat(autoListe.map(z => 'Automatisch ergänzt: ' + z.grund));
     // Zusatzartikel (von Hand ergänzt)
     res.zusatz = (pos._zusatz || []).map(z => String(z.key || '').startsWith('grp:')
       ? { gruppe: (index.nachGruppe || new Map()).get(z.key), menge: z.menge || 1, key: z.key }

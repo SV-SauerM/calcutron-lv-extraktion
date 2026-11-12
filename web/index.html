@@ -82,6 +82,12 @@ input.vorgabe:not(:placeholder-shown) { border-color: var(--akzent); background:
 .vstat.ok { color: var(--gruen); } .vstat.ok::before { background: var(--gruen); }
 .vstat.nicht { color: var(--rot); font-weight: 500; } .vstat.nicht::before { background: var(--rot); }
 td.hin2 { color: var(--mut); font-size: 12.5px; }
+.ablage { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 20; display: flex; gap: 8px; align-items: center; background: var(--fl); border: 1px solid var(--akzent); color: var(--fg); border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 12.5px; box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.ablage button { padding: 2px 10px; font-size: 12px; border-radius: 999px; }
+.zkopf { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 6px; }
+.zkopf h4 { margin: 0; flex: 1 1 auto; }
+.zkopf button { padding: 2px 9px; font-size: 12px; }
+.marke.auto { color: var(--gelb); border-color: var(--gelb); }
 td.leer { text-align: center; color: var(--mut); padding: 40px 16px; }
 td.leer strong { display: block; color: var(--fg); font-weight: 500; margin-bottom: 4px; }
 td.oz, td.ext { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
@@ -155,13 +161,16 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     <span class="trenner"></span>
     <button id="exportBarebone" disabled>Barebone (.xlsx)</button>
     <button id="exportPruef" disabled>Prüfliste (.xlsx)</button>
+    <button id="projSpeichern" disabled>Projekt speichern</button>
+    <label class="datei" for="projDatei">Projekt öffnen<input id="projDatei" type="file" accept=".json,.lvx.json"></label>
     <label class="datei" for="favDatei">Favoriten aktualisieren<input id="favDatei" type="file" accept=".xlsx" multiple></label>
   </div>
 
-  <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit) oder GAEB X83</div>
+  <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit), GAEB X83 oder gespeichertes Projekt (.json)</div>
 
   <div class="status" id="status" role="status" aria-live="polite"></div>
   <datalist id="standardtexte"></datalist>
+  <div class="ablage" id="ablage" hidden><span id="ablageText"></span><button type="button" id="ablageLeeren">Leeren</button></div>
 
   <section class="auswahl" id="auswahl" hidden>
     <div class="auswahlKopf">
@@ -359,6 +368,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       const z = { gruen: 0, gelb: 0, rot: 0, manuell: 0 }; ergebnisse.forEach(e => z[e.ampel]++);
       status(`Fertig: ${n} Positionen in ${((performance.now() - t0) / 1000).toFixed(1)} s abgeglichen – grün ${z.gruen}, gelb ${z.gelb}, rot ${z.rot}${z.manuell ? ', Platzhalter ' + z.manuell : ''}.`, 'ok');
       $('exportBarebone').disabled = $('exportPruef').disabled = false;
+      autoSichern();
     } catch (e) {
       status('Abbruch beim Abgleich: ' + (e && e.message || e) + '. Bitte die Datei und diese Meldung an Claude geben.', 'fehler');
     } finally {
@@ -515,17 +525,41 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (kand.length && !pos._platzhalter) {
       s3.append(el('h4', { text: 'Kandidaten' }), artikelListe(kand, [['Nehmen', a => { pos._wahl = LVX.schluessel(a); pos._platzhalter = false; rechne(); }]]));
     }
-    s3.append(el('h4', { text: 'Zusatzartikel' }));
+    const zk = el('div', { class: 'zkopf' }, el('h4', { text: 'Zusatzartikel' }));
+    const markiert = () => (pos._zusatz || []).filter(z => z._mark);
+    if ((pos._zusatz || []).length) {
+      const kop = el('button', { type: 'button', text: markiert().length ? `Markierte kopieren (${markiert().length})` : 'Alle kopieren' });
+      kop.addEventListener('click', () => { const q = markiert().length ? markiert() : pos._zusatz; ablageSetzen(q.map(({ _mark, ...z }) => ({ ...z, auto: false })), pos.oz); pos._zusatz.forEach(z => { delete z._mark; }); zeigeErgebnis(); });
+      zk.append(kop);
+    }
+    if (ablage.length) {
+      const ein = el('button', { type: 'button', text: `Einfügen (${ablage.length})` });
+      ein.addEventListener('click', () => { pos._zusatz = (pos._zusatz || []).concat(ablage.map(z => ({ ...z }))); rechne(); status(`${ablage.length} Zusätze aus ${ablageVon} in ${pos.oz} eingefügt.`, 'ok'); });
+      zk.append(ein);
+    }
+    if ((pos._zusatz || []).some(z => z.auto) || pos._autoErledigt) {
+      const neuA = el('button', { type: 'button', text: 'Automatik neu', title: 'Automatisch ergänzte Zusätze neu ermitteln' });
+      neuA.addEventListener('click', () => { pos._zusatz = (pos._zusatz || []).filter(z => !z.auto); pos._autoErledigt = false; rechne(); });
+      zk.append(neuA);
+    }
+    s3.append(zk);
     const zl = el('div', { class: 'liste' });
     (pos._zusatz || []).forEach((z, i) => {
       const a = (e.zusatz || []).find(x => (x.key || x.ext) === (z.key || z.ext));
       const istGr = String(z.key || '').startsWith('grp:');
-      const m = el('input', { type: 'number', class: 'menge', min: '0', step: 'any', 'aria-label': 'Menge ' + z.ext });
+      const mk = el('input', { type: 'checkbox', 'aria-label': 'Zum Kopieren markieren' });
+      mk.checked = !!z._mark;
+      mk.addEventListener('change', () => { z._mark = mk.checked; zeigeErgebnis(); });
+      const m = el('input', { type: 'number', class: 'menge', min: '0', step: 'any', 'aria-label': 'Menge ' + (z.ext || '') });
       m.value = z.menge;
       m.addEventListener('change', () => { z.menge = Number(m.value) > 0 ? Number(m.value) : 1; rechne(); });
       const x = el('button', { type: 'button', text: 'Entfernen' });
       x.addEventListener('click', () => { pos._zusatz.splice(i, 1); rechne(); });
-      zl.append(el('div', { class: 'li' }, m, el('span', { class: 'ext', text: istGr ? (a ? `Gruppe · ${a.gruppe.anzahl} Art.` : 'Gruppe') : (a ? `${a.artikel.hersteller} ${z.ext || ''}`.trim() : (z.ext || '')) }), el('span', { class: 'ds', text: a ? (istGr ? a.gruppe.desc : a.artikel.desc).replace(/\n/g, ' ') + (istGr ? ' – Menge = Gruppenmenge, bei „pro Meter“ die Länge in m' : '') : 'nicht mehr in den Favoriten' }), x));
+      const ds = a ? (istGr ? a.gruppe.desc : a.artikel.desc).replace(/\n/g, ' ') : 'nicht mehr in den Favoriten';
+      zl.append(el('div', { class: 'li' }, mk, m,
+        el('span', { class: 'ext', text: istGr ? (a ? `Gruppe · ${a.gruppe.anzahl} Art.` : 'Gruppe') : (a ? `${a.artikel.hersteller} ${z.ext || ''}`.trim() : (z.ext || '')) }),
+        el('span', { class: 'ds', title: z.grund || '', text: ds + (z.grund ? ' – ' + z.grund : (istGr ? ' – Menge = Gruppenmenge, bei „pro Meter“ Länge in m' : '')) }),
+        z.auto ? el('span', { class: 'marke auto', text: 'auto' }) : '', x));
     });
     if (!(pos._zusatz || []).length) zl.append(el('div', { class: 'hinweis', text: 'Noch keine. Über die Suche hinzufügen.' }));
     s3.append(zl);
@@ -604,6 +638,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   function neuesProjekt() {
     lv = null; ergebnisse = []; lvVoll = null;
     $('auswahl').hidden = true; $('auswahlBtn').disabled = true; $('baum').textContent = '';
+    $('projSpeichern').disabled = true;
     $('vorgabe').value = '';
     $('zahlen').textContent = '';
     $('quelleHinweis').textContent = '';
@@ -689,6 +724,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const an = lvVoll.positionen.filter(p => !p._aus).length;
     $('auswahlZahl').textContent = `${an} von ${lvVoll.positionen.length} Positionen ausgewählt`;
     $('startBtn').disabled = an === 0;
+    $('projSpeichern').disabled = false;
+    autoSichern();
   }
 
   function zeigeAuswahl(daten, name) {
@@ -741,7 +778,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   const drop = $('drop');
   ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('aktiv'); }));
   ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, () => drop.classList.remove('aktiv')));
-  drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) oeffneLv(f); });
+  drop.addEventListener('drop', async e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return; if (/\.json$/i.test(f.name)) { try { projektLaden(JSON.parse(await f.text()), f.name); } catch (err) { status(f.name + ' ließ sich nicht öffnen: ' + err.message, 'fehler'); } } else oeffneLv(f); });
   $('neuBtn').addEventListener('click', () => { laufNr++; sperre(false); neuesProjekt(); status('Neues Projekt: alles zurückgesetzt.', 'ok'); });
   $('beispielBtn').addEventListener('click', () => zeigeAuswahl(window.LVX_BEISPIEL, 'Beispiel'));
   $('vorgabe').addEventListener('change', rechne);
@@ -767,16 +804,70 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     } catch (err) { status('Favoriten ließen sich nicht einlesen: ' + err.message, 'fehler'); }
   });
 
+  // ---------- Zwischenablage für Zusätze
+  let ablage = [], ablageVon = '';
+  function ablageSetzen(liste, von) {
+    ablage = liste; ablageVon = von;
+    $('ablage').hidden = !ablage.length;
+    $('ablageText').textContent = `Zwischenablage: ${ablage.length} ${ablage.length === 1 ? 'Zusatz' : 'Zusätze'} aus ${von} – in anderer Position „Einfügen“`;
+    status(`${ablage.length} Zusätze aus ${von} kopiert.`, 'ok');
+  }
+  $('ablageLeeren').addEventListener('click', () => { ablage = []; $('ablage').hidden = true; if (lv) zeigeErgebnis(); });
+
+  // ---------- Projekt speichern / öffnen / automatisch sichern
+  function projektDaten() {
+    return { format: 'calcutron-lv-extraktion', version: 1, gespeichert: new Date().toISOString(), name: lvName, lvVoll, abgleich: !!lv, profil: profilListen, lose: losEinst };
+  }
+  function autoSichern() {
+    if (!lvVoll) return;
+    try { localStorage.setItem('lvx-auto', JSON.stringify(projektDaten())); } catch (e) { /* zu groß oder gesperrt: ohne Autosicherung weiter */ }
+  }
+  function projektLaden(d, quelle) {
+    if (!d || d.format !== 'calcutron-lv-extraktion' || !d.lvVoll) throw new Error('keine Projektdatei der Calcutron-LV-Extraktion');
+    if (d.profil) { profilListen = d.profil; profilUebernehmen(true); zeigeProfil(); }
+    if (d.lose) { Object.assign(losEinst, d.lose); speichere('lvx-lose', losEinst); zeigeLose(); }
+    laufNr++;
+    lvVoll = d.lvVoll; lvName = d.name || quelle;
+    ergebnisse = []; lv = null;
+    $('auswahlBtn').disabled = false;
+    zeigeBaum();
+    if (d.abgleich) {
+      const pos = lvVoll.positionen.filter(p => !p._aus);
+      lv = { ...lvVoll, positionen: pos };
+      $('auswahl').hidden = true;
+      $('quelleHinweis').textContent = quelleText(lvVoll, lvName) + ` · ${pos.length} von ${lvVoll.positionen.length} Positionen ausgewählt`;
+      rechne();
+    } else {
+      $('auswahl').hidden = false;
+      $('quelleHinweis').textContent = quelleText(lvVoll, lvName);
+    }
+    $('projSpeichern').disabled = false;
+    status(`Projekt „${lvName}“ geladen (gespeichert ${new Date(d.gespeichert).toLocaleString('de-DE')}).`, 'ok');
+  }
+  $('projSpeichern').addEventListener('click', () => {
+    const name = `Projekt ${String(lvName || 'LV').replace(/\.[^.]+$/, '')} ${datum()}.json`;
+    speichereBlob(name, new Blob([JSON.stringify(projektDaten())], { type: 'application/json' }));
+  });
+  $('projDatei').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try { projektLaden(JSON.parse(await f.text()), f.name); } catch (err) { status(f.name + ' ließ sich nicht öffnen: ' + err.message, 'fehler'); }
+  });
+
   // ---------- Export (im claude.ai-Viewer über „downloads“, lokal als normaler Download)
   async function speichereDatei(name, wb) {
     const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+    return speichereBlob(name, new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  }
+  async function speichereBlob(name, blob) {
+    const buf = blob;
     const dl = window.claude && window.claude.use ? await Promise.race([window.claude.use('downloads'), new Promise(r => setTimeout(() => r(null), 1500))]) : null;
     if (dl) {
-      try { await dl.save({ filename: name, data: new Blob([buf]) }); status(name + ' gespeichert.', 'ok'); }
+      try { await dl.save({ filename: name, data: buf }); status(name + ' gespeichert.', 'ok'); }
       catch (e) { status(e && e.code === 'declined' ? 'Speichern abgebrochen.' : 'Speichern nicht möglich: ' + (e && e.message || e), e && e.code === 'declined' ? 'info' : 'fehler'); }
       return;
     }
-    const a = el('a', { href: URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })), download: name });
+    const a = el('a', { href: URL.createObjectURL(buf), download: name });
     document.body.append(a); a.click(); a.remove();
     status(name + ' erstellt.', 'ok');
   }
@@ -795,7 +886,14 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const dl = $('standardtexte'); dl.textContent = '';
     for (const z of fav.zeilen.filter(z => z.typ === 'PLACEHOLDER')) dl.append(el('option', { value: String(z.desc).replace(/\s+/g, ' ').trim() }));
     neuesProjekt();
-    status('Bereit. LV öffnen oder hierher ziehen.', 'ok');
+    let auto = null;
+    try { auto = JSON.parse(localStorage.getItem('lvx-auto') || 'null'); } catch (e) { auto = null; }
+    if (auto && auto.lvVoll) {
+      status(`Bereit. Zuletzt bearbeitet: „${auto.name}“ (${new Date(auto.gespeichert).toLocaleString('de-DE')}).`, 'info');
+      const b = el('button', { type: 'button', class: 'primaer', text: 'Weiterarbeiten' });
+      b.addEventListener('click', () => { try { projektLaden(auto, auto.name); } catch (err) { status('Letztes Projekt ließ sich nicht laden: ' + err.message, 'fehler'); } });
+      $('status').append(b);
+    } else status('Bereit. LV öffnen oder hierher ziehen.', 'ok');
   })();
 })();
 </script>
