@@ -30,9 +30,9 @@
     { id: 'uss', name: 'Überspannungsschutz', re: /(ueberspannung|ableiter|blitzstrom|\bspd\b|dehnguard|dehnventil|\buess\b|\buss\b)/ },
     { id: 'umschalter', name: 'Umschalter', re: /(lastumschalter|netzumschalter|umschalter|\bats\b)/ },
     { id: 'nh_leiste', name: 'NH-Leiste', re: /(leiste|sasil|\bsl-?\d)/, need: /(nh|sicherung|sasil)/ },
-    { id: 'nh_trenner', name: 'Sicherungslasttrenner', re: /(sicherungs-?lasttrenn|sicherungs-?lastschalter|nh-?trenner|nh-?lasttrenn|\blatr\b|ltl\d)/ },
+    { id: 'nh_trenner', name: 'Sicherungslasttrenner', re: /(sicherungs-?lasttrenn|\bsi-?lasttrenn|sicherungs-?lastschalter|nh-?trenner|nh-?lasttrenn|\blatr\b|ltl\d)/ },
     { id: 'sls', name: 'SLS', re: /(\bsls\b|selektive?r? haupt)/ },
-    { id: 'lsw', name: 'Leistungsschalter', re: /(leistungsschalter|\bacb\b|\bmccb\b|izmx|\bnzm|\bhw[1-4]\b)/ },
+    { id: 'lsw', name: 'Leistungsschalter', re: /(leistungsschalter|leistungssch\.|leistungsc\.|leistungsschalt\.|\bacb\b|\bmccb\b|izmx|\bnzm|\bhw[1-4]\b|\bh3\+|\bh(?:250|400|630|1000|1600)\b)/ },
     { id: 'lts', name: 'Lasttrennschalter', re: /(lasttrennschalter|lasttrenner|hauptschalter|trennschalter|lastschalter)/ },
     { id: 'sockel', name: 'Sicherungssockel', re: /(sicherungssockel|sicherungsunterteil|sicherungselement|sockel d0|d0[123]-?sockel|neozed-?sockel|kunstst\.?sockel|sockel)/, need: /(d0|neozed|sicherung|e18|e14|e33)/ },
     { id: 'sich_einsatz', name: 'Sicherungseinsatz', re: /(sicherungseinsatz|sicherungseinsaetze|schmelzeinsatz|nh-?sicherung)/ },
@@ -146,6 +146,8 @@
     if (!m.char && (r = t.match(/(?:char(?:akteristik)?\.?\s*:?\s*|\b)([bcdk])-?\s?char/))) m.char = r[1].toUpperCase();
     if (!m.char && (r = t.match(/charakteristik\s*:?\s*([bcdk])\b/))) m.char = r[1].toUpperCase();
 
+    // Schreibweise 3x630A / 4x630A = Polzahl x Nennstrom
+    if ((r = t.match(/\b([1-4])\s?x\s?(\d{2,4})\s?a\b/))) { if (m.In == null) m.In = num(r[2]); m.pole = m.pole || r[1]; }
     // FI-Schreibweise 40/0,03 A
     if ((r = t.match(/\b(\d{1,3})\s?\/\s?0\.(\d{1,3})\s?a\b/))) { if (m.In == null) m.In = num(r[1]); m.mA = Math.round(num('0.' + r[2]) * 1000); }
     // Nennstrom
@@ -240,6 +242,9 @@
       else if (/\bbu\b|blau|neutralleiter|n-klemme/.test(t)) m.klemmeArt = 'N';
       else if (/durchgang|grau|\bpt\s?\d/.test(t)) m.klemmeArt = 'L';
     }
+    // Bauart Leistungsschalter: offen (ACB) / kompakt (MCCB)
+    if (/\bacb\b|offene?n? bauweise|luftleistungsschalter|offener leistungsschalter|\bhw[1-4]\b|izmx/.test(t)) m.bauart = 'offen';
+    else if (/\bmccb\b|kompaktbauweise|kompakt-?leistungsschalter|\bh3\+|\bh(?:250|400|630|1000|1600)\b|\bnzm/.test(t)) m.bauart = 'kompakt';
     // Gewinde
     if ((r = t.match(/\bm\s?(12|16|20|25|32|40|50|63)\b/))) m.gewinde = 'M' + r[1];
     // Form (NSHV)
@@ -566,6 +571,7 @@
       x.p.unbekannt.length - y.p.unbekannt.length ||
       x.a.prio - y.a.prio ||
       (x.p.ueber.In || 0) - (y.p.ueber.In || 0) ||
+      (lv.bauart ? (x.a.m.bauart && x.a.m.bauart !== lv.bauart ? 1 : 0) - (y.a.m.bauart && y.a.m.bauart !== lv.bauart ? 1 : 0) : 0) ||
       ueberSumme(x.p) - ueberSumme(y.p) ||
       MIN_KEYS.reduce((s, k) => s || ((x.a.m[k] || 0) - (y.a.m[k] || 0)), 0) ||
       y.score - x.score);
@@ -583,6 +589,7 @@
     if (fehlend.length) gelb.push('Merkmal fehlt im LV: ' + fehlend.join(', '));
     if (best.p.unbekannt.length) gelb.push('Merkmal am Favorit nicht lesbar: ' + best.p.unbekannt.join(', '));
     if (best.p.ersatz.length) gelb.push('Ersatz mit Abweichung: ' + best.p.ersatz.join(', '));
+    if (lv.bauart && best.a.m.bauart && best.a.m.bauart !== lv.bauart) gelb.push(`Bauart abweichend: ${best.a.m.bauart === 'kompakt' ? 'Kompakt-Leistungsschalter (MCCB)' : 'offener Leistungsschalter (ACB)'} statt ${lv.bauart === 'kompakt' ? 'MCCB' : 'ACB'}`);
     if (best.p.ueber.In && !best.p.ersatz.length) gelb.push(`Nennstrom höher als gefordert: ${best.a.m.In} A statt ${lv.In} A (kein Favorit mit ${lv.In} A)`);
 
     // Mehrdeutigkeit: zweiter Kandidat mit gleichen Merkmalen, aber anderem Artikel
