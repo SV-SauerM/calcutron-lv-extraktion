@@ -390,7 +390,29 @@
       }
       if (!alleFav.includes(a)) alleFav.push(a);
     }
-    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt, alleFav };
+    // Favoritengruppen (mit allen darunterliegenden Zeilen), z. B. Sammelschienensysteme aus LOS04
+    const gruppenListe = [];
+    const nachGruppe = new Map();
+    const proLos = new Map();
+    for (const z of favoriten) { if (!proLos.has(z.los)) proLos.set(z.los, []); proLos.get(z.los).push(z); }
+    for (const [los, zeilen] of proLos) {
+      const code = String(los).split(' ')[0];
+      for (let i = 0; i < zeilen.length; i++) {
+        const g = zeilen[i];
+        if (g.typ !== 'GROUP' || !g.pos.includes('.')) continue; // oberste Losgruppe nicht anbieten
+        const unter = [];
+        for (let j = i + 1; j < zeilen.length && zeilen[j].pos.startsWith(g.pos + '.'); j++) unter.push(zeilen[j]);
+        const anzahl = unter.filter(z => z.typ !== 'GROUP').length;
+        if (!anzahl) continue;
+        const p = pfad(los, g.pos);
+        const herst = [...new Set(unter.filter(z => z.cat).map(z => KATALOG[z.cat] || z.cat))].slice(0, 2).join('/');
+        const gr = { _gruppe: true, key: 'grp:' + code + '|' + g.pos, los, pos: g.pos, desc: g.desc, notes: g.notes, qty: g.qty, pfad: p, zeilen: unter, anzahl,
+          blatt: !unter.some(z => z.typ === 'GROUP'), hersteller: herst, ext: null, typ: 'GROUP',
+          _such: norm([g.desc, g.notes, p.slice(0, 3).join(' '), code].join(' ')).replace(/\s+/g, ' ') };
+        gruppenListe.push(gr); nachGruppe.set(gr.key, gr);
+      }
+    }
+    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle, nachExt, alleFav, gruppen: gruppenListe, nachGruppe };
   }
 
   // ---------------------------------------------------------------- Abgleich
@@ -483,7 +505,18 @@
           hinweise: ['Vorgabe: ' + vorrang, `Artikel per Vorgabe: ${hit.hersteller} ${hit.ext}`], vorgabe: { status: 'ok', text: 'Artikel ' + hit.ext + ' gesetzt' } };
       }
     }
-    const out = gleicheAbKern(text, index, opts);
+    let out = gleicheAbKern(text, index, opts);
+    if (!out.artikel && !out.paket && !out.placeholder) {
+      const t = suche(index, vorrang, 5, 'artikel');
+      if (t.length) {
+        const a = t[0];
+        if (a.typ === 'PLACEHOLDER') {
+          return { text, m: out.m, typ: null, ampel: 'manuell', artikel: null, paket: null, kandidaten: t, placeholder: a.desc, manuell: true,
+            hinweise: ['Vorgabe: ' + vorrang, 'Standardtext aus ' + String(a.los).split(' ')[0] + ' per Textsuche'], vorgabe: { status: 'ok', text: 'Standardtext gefunden' } };
+        }
+        out = { ...out, artikel: a, kandidaten: t, ampel: 'gelb', hinweise: out.hinweise.filter(h => !/Gerätetyp nicht erkannt/.test(h)).concat(`Per Textsuche gefunden (${t.length} Treffer) – prüfen`) };
+      }
+    }
     // Wurde die Vorgabe gefunden? Codes und Suchwörter müssen im gewählten Artikel vorkommen
     const gew = out.artikel || (out.paket && out.paket.items[0]);
     const pruefen = codes.concat(suchwoerter(vorrang).filter(w => !codes.includes(w)));
@@ -863,7 +896,9 @@
     const res0 = verarbeitePositionAuto(pos, index, opts);
     const res = res0;
     // Zusatzartikel (von Hand ergänzt)
-    res.zusatz = (pos._zusatz || []).map(z => ({ artikel: (index.nachExt || new Map()).get(z.key || kompakt(z.ext)), menge: z.menge || 1, ext: z.ext, key: z.key })).filter(z => z.artikel);
+    res.zusatz = (pos._zusatz || []).map(z => String(z.key || '').startsWith('grp:')
+      ? { gruppe: (index.nachGruppe || new Map()).get(z.key), menge: z.menge || 1, key: z.key }
+      : { artikel: (index.nachExt || new Map()).get(z.key || kompakt(z.ext)), menge: z.menge || 1, ext: z.ext, key: z.key }).filter(z => z.artikel || z.gruppe);
     // Platzhalter: nichts übernehmen, nur Text
     if (pos._platzhalter) {
       const txt = String(pos._platzhalterText || '').trim() || 'Platzhalter';
@@ -933,20 +968,32 @@
   }
 
   // Freitextsuche über alle Favoriten (alle Wörter müssen vorkommen)
-  function suche(index, q, max = 12) {
+  // bereich: 'alle' | 'artikel' | 'gruppen' | 'LOS04' (Sammelschienen-Gruppen)
+  function suche(index, q, max = 12, bereich = 'alle') {
     const w = tokens(q);
-    if (!w.length) return [];
     const k = kompakt(q);
     const treffer = [];
     const gesehen = new Set();
-    for (const a of index.alleFav || index.artikel) {
+    let quelle = [];
+    if (bereich === 'alle' || bereich === 'artikel') quelle = quelle.concat(index.alleFav || index.artikel);
+    if (bereich === 'alle' || bereich === 'gruppen') quelle = quelle.concat(index.gruppen || []);
+    if (bereich === 'LOS04') {
+      quelle = (index.gruppen || []).filter(g => /^LOS04/.test(g.los) && g.blatt);
+      if (!w.length) return quelle.slice(0, max);
+    }
+    if (!w.length) return [];
+    for (const a of quelle) {
+      if (a._gruppe) {
+        if (w.every(x => a._such.includes(x))) { const d = norm(a.desc); treffer.push({ a, rang: (w.every(x => d.includes(x)) ? 1 : 2) + 0.5, stelle: d.indexOf(w[0]) }); }
+        continue;
+      }
       const key = schluessel(a);
       if (gesehen.has(key)) continue;
       const t = a._such || (a._such = textVon(a));
       const extTreffer = k.length >= 3 && kompakt(a.ext || '').startsWith(k);
-      if (extTreffer || w.every(x => t.includes(x))) { treffer.push({ a, rang: extTreffer ? 0 : (t.includes(norm(q).trim()) ? 1 : 2) }); gesehen.add(key); }
+      if (extTreffer || w.every(x => t.includes(x))) { const d = norm(a.desc); treffer.push({ a, rang: extTreffer ? 0 : (t.includes(norm(q).trim()) ? 1 : 2), stelle: d.indexOf(w[0]) < 0 ? 999 : d.indexOf(w[0]) }); gesehen.add(key); }
     }
-    treffer.sort((x, y) => x.rang - y.rang || String(x.a.desc).length - String(y.a.desc).length);
+    treffer.sort((x, y) => x.rang - y.rang || (x.stelle ?? 999) - (y.stelle ?? 999) || String(x.a.desc).length - String(y.a.desc).length);
     return treffer.slice(0, max).map(x => x.a);
   }
 

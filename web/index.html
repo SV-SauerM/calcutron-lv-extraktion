@@ -429,6 +429,12 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   }
 
   function zusatzZeile(z) {
+    if (z.gruppe) return el('tr', { class: 'unter' },
+      el('td'), el('td'),
+      el('td', {}, el('span', { class: 'ampel gruen', text: '+' })),
+      el('td', { class: 'text', text: `Zusatzgruppe (${z.gruppe.anzahl} Artikel)` }),
+      el('td', { class: 'gew' }, el('div', { class: 'ext', text: String(z.gruppe.los).split(' ')[0] + ' ' + z.gruppe.pos }), el('div', { class: 'desc', text: z.gruppe.desc })),
+      el('td', { class: 'zahl', text: z.menge + ' je St.' }));
     return el('tr', { class: 'unter' },
       el('td'), el('td'),
       el('td', {}, el('span', { class: 'ampel gruen', text: '+' })),
@@ -441,7 +447,9 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const box = el('div', { class: 'liste' });
     for (const a of liste) {
       const knoepfe = aktionen.map(([knopf, aktion]) => { const b = el('button', { type: 'button', text: knopf }); b.addEventListener('click', () => aktion(a)); return b; });
-      box.append(el('div', { class: 'li' }, ...knoepfe, el('span', { class: 'ext', text: `${a.hersteller || ''} ${a.ext}` }), el('span', { class: 'ds', title: a.desc, text: String(a.desc).replace(/\n/g, ' ') }), el('span', { class: 'marke', text: String(a.los || '').split(' ')[0] })));
+      const kopf = a._gruppe ? `Gruppe · ${a.anzahl} Art.` : `${a.hersteller || ''} ${a.ext || (a.typ === 'PLACEHOLDER' ? 'Text' : '')}`;
+      const ds = a._gruppe ? `${a.desc}  (${(a.pfad || []).slice(0, 2).reverse().join(' › ')})` : String(a.desc);
+      box.append(el('div', { class: 'li' }, ...knoepfe, el('span', { class: 'ext', text: kopf.trim() }), el('span', { class: 'ds', title: ds, text: ds.replace(/\n/g, ' ') }), el('span', { class: 'marke', text: String(a.los || '').split(' ')[0] })));
     }
     return box;
   }
@@ -507,34 +515,48 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const zl = el('div', { class: 'liste' });
     (pos._zusatz || []).forEach((z, i) => {
       const a = (e.zusatz || []).find(x => (x.key || x.ext) === (z.key || z.ext));
+      const istGr = String(z.key || '').startsWith('grp:');
       const m = el('input', { type: 'number', class: 'menge', min: '0', step: 'any', 'aria-label': 'Menge ' + z.ext });
       m.value = z.menge;
       m.addEventListener('change', () => { z.menge = Number(m.value) > 0 ? Number(m.value) : 1; rechne(); });
       const x = el('button', { type: 'button', text: 'Entfernen' });
       x.addEventListener('click', () => { pos._zusatz.splice(i, 1); rechne(); });
-      zl.append(el('div', { class: 'li' }, m, el('span', { class: 'ext', text: a ? `${a.artikel.hersteller} ${z.ext || ''}`.trim() : (z.ext || '') }), el('span', { class: 'ds', text: a ? a.artikel.desc.replace(/\n/g, ' ') : 'nicht mehr in den Favoriten' }), x));
+      zl.append(el('div', { class: 'li' }, m, el('span', { class: 'ext', text: istGr ? (a ? `Gruppe · ${a.gruppe.anzahl} Art.` : 'Gruppe') : (a ? `${a.artikel.hersteller} ${z.ext || ''}`.trim() : (z.ext || '')) }), el('span', { class: 'ds', text: a ? (istGr ? a.gruppe.desc : a.artikel.desc).replace(/\n/g, ' ') + (istGr ? ' – Menge = Gruppenmenge, bei „pro Meter“ die Länge in m' : '') : 'nicht mehr in den Favoriten' }), x));
     });
     if (!(pos._zusatz || []).length) zl.append(el('div', { class: 'hinweis', text: 'Noch keine. Über die Suche hinzufügen.' }));
     s3.append(zl);
     const sId = 's-' + pos.oz;
     const sInp = el('input', { type: 'search', class: 'vorgabe', id: sId, placeholder: 'Favoriten durchsuchen: Text oder Artikelnummer', 'aria-label': 'Favoriten durchsuchen' });
+    const bereich = el('select', { 'aria-label': 'Suchbereich' });
+    [['alle', 'Artikel und Gruppen'], ['artikel', 'nur Artikel'], ['gruppen', 'nur Gruppen'], ['LOS04', 'Sammelschienen (LOS04)']].forEach(([v, t]) => bereich.append(el('option', { value: v, text: t })));
+    bereich.value = pos._suchBereich || 'alle';
     const sErg = el('div');
     let tmr = null;
-    sInp.addEventListener('input', () => {
+    const lauf = () => {
       clearTimeout(tmr);
       tmr = setTimeout(() => {
         sErg.textContent = '';
         const q = sInp.value.trim();
-        if (q.length < 2) return;
-        const t = LVX.suche(index, q, 12);
+        if (q.length < 2 && bereich.value !== 'LOS04') return;
+        const t = LVX.suche(index, q, bereich.value === 'LOS04' && !q ? 40 : 15, bereich.value);
         if (!t.length) { sErg.append(el('div', { class: 'hinweis', text: 'Kein Favorit gefunden.' })); return; }
-        sErg.append(artikelListe(t, [
-          ['Nehmen', a => { pos._wahl = LVX.schluessel(a); pos._platzhalter = false; rechne(); }],
-          ['+ Zusatz', a => { pos._zusatz = (pos._zusatz || []).concat({ key: LVX.schluessel(a), ext: a.ext, menge: 1 }); rechne(); }]]));
-        sErg.append(el('div', { class: 'hinweis', text: '„Nehmen“ ersetzt den Hauptartikel (ein Standardtext wird zum Platzhalter), „+ Zusatz“ fügt eine weitere Unterposition hinzu.' }));
+        const box = el('div', { class: 'liste' });
+        for (const a of t) {
+          const akt = a._gruppe
+            ? [['+ Gruppe', x => { pos._zusatz = (pos._zusatz || []).concat({ key: x.key, menge: 1 }); rechne(); }]]
+            : [['Nehmen', x => { pos._wahl = LVX.schluessel(x); pos._platzhalter = false; rechne(); }],
+               ['+ Zusatz', x => { pos._zusatz = (pos._zusatz || []).concat({ key: LVX.schluessel(x), ext: x.ext, menge: 1 }); rechne(); }]];
+          box.append(...artikelListe([a], akt).childNodes);
+        }
+        sErg.append(box);
+        sErg.append(el('div', { class: 'hinweis', text: '„Nehmen“ ersetzt den Hauptartikel (ein Standardtext wird zum Platzhalter). „+ Zusatz“ fügt einen Artikel, „+ Gruppe“ eine ganze Favoritengruppe mit allen Artikeln als Unterposition hinzu. Bei Gruppen „pro Meter“ trägst du als Menge die Länge in m ein.' }));
       }, 200);
-    });
-    s3.append(el('h4', { text: 'Suche in den Favoriten' }), sInp, sErg);
+    };
+    sInp.addEventListener('input', lauf);
+    bereich.addEventListener('change', () => { pos._suchBereich = bereich.value; lauf(); });
+    const ssBtn = el('button', { type: 'button', text: 'Sammelschiene hinzufügen' });
+    ssBtn.addEventListener('click', () => { bereich.value = 'LOS04'; pos._suchBereich = 'LOS04'; sInp.value = sInp.value || 'sammelschiene'; sInp.focus(); lauf(); });
+    s3.append(el('h4', { text: 'Suche in den Favoriten' }), el('div', { class: 'feldzeile' }, bereich, ssBtn), sInp, sErg);
 
     sp.append(s1, s2, s3);
     return el('tr', { class: 'detail' }, el('td', { colspan: '6' }, sp));

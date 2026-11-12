@@ -244,7 +244,19 @@
       let k = 0;
       if (e.haupt) schreibe(gpos + '.' + (++k), e.haupt, Number(p._menge) > 0 ? Number(p._menge) : 1, p.oz, p.kurztext, e.unter.length ? null : p.referenz);
       for (const u of e.unter) schreibe(gpos + '.' + (++k), u.erg, u.menge, p.oz, u.erg.text, null);
-      for (const z of e.zusatz || []) schreibe(gpos + '.' + (++k), { ampel: 'gruen', artikel: z.artikel, hinweise: ['Zusatzartikel (von Hand)'], m: z.artikel.m || {}, text: z.artikel.desc }, z.menge, p.oz, z.artikel.desc, null);
+      for (const z of (e.zusatz || []).filter(z => z.gruppe)) {
+        // Favoritengruppe mit allen Unterzeilen; Gruppenmenge = eingetragene Menge (z. B. Länge in m)
+        const gp = gpos + '.' + (++k);
+        const gr = z.gruppe;
+        zeilen.push(gruppenZeile(gp, gr.desc, z.menge, gr.notes || null));
+        for (const r of gr.zeilen) {
+          const np = gp + r.pos.slice(gr.pos.length);
+          if (r.typ === 'GROUP') zeilen.push(gruppenZeile(np, r.desc, r.qty == null ? 1 : r.qty, r.notes || null));
+          else { zeilen.push(produktZeile(np, r, r.qty == null ? 1 : r.qty)); if (r.typ !== 'PLACEHOLDER' && !r.wage) lohnFallback.push(np); }
+        }
+        pruef.push([gp, p.oz, 'Gruppe', 'Zusatzgruppe (von Hand)', '', '', '', gr.desc, z.menge, `${gr.anzahl} Artikel aus ${String(gr.los).split(' ')[0]} ${gr.pos}`, '', '', '']);
+      }
+      for (const z of (e.zusatz || []).filter(z => z.artikel)) schreibe(gpos + '.' + (++k), { ampel: 'gruen', artikel: z.artikel, hinweise: ['Zusatzartikel (von Hand)'], m: z.artikel.m || {}, text: z.artikel.desc }, z.menge, p.oz, z.artikel.desc, null);
       if (!e.haupt && !e.unter.length && !(e.zusatz || []).length) schreibe(gpos + '.1', { ampel: 'rot', hinweise: ['nicht verarbeitet'], m: {}, text: p.kurztext }, 1, p.oz, p.kurztext, p.referenz);
     }
     lohnFallback.forEach(p => {
