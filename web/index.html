@@ -363,7 +363,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const tdText = el('td', { class: 'text' }, el('div', { text: text.slice(0, 220) }));
     if (refFeld) tdText.append(refFeld);
     if (!unter) {
-      const inp = el('input', { type: 'text', class: 'vorgabe', id: 'v-' + pos.oz, placeholder: 'Vorgabe, geht vor LV-Text (z. B. 4-polig 36 kA Hager h3+)', 'aria-label': 'Vorgabe für Position ' + pos.oz });
+      const inp = el('input', { type: 'text', class: 'vorgabe', id: 'v-' + pos.oz, placeholder: 'Vorgabe, geht vor LV-Text (z. B. 4-polig 36 kA Hager h3+ · vector 48 PLE · LOS03)', 'aria-label': 'Vorgabe für Position ' + pos.oz });
       inp.value = pos._hinweis || '';
       inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
       inp.addEventListener('change', () => { pos._hinweis = inp.value.trim(); rechne(); });

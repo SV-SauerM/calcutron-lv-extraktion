@@ -22,7 +22,7 @@
 
   // Gerätetypen: Reihenfolge = Priorität (spezifisch vor allgemein)
   const TYPEN = [
-    { id: 'nshv', name: 'NSHV', re: /\b(nshv|niederspannungs-?haupt|hauptverteilung|schaltgeraetekombination|einspeisefeld|abgangsfeld|kuppelfeld)/ },
+    { id: 'nshv', name: 'NSHV', re: /\b(nshv|niederspannungs-?haupt|hauptverteilung|einspeisefeld|abgangsfeld|kuppelfeld)/ },
     { id: 'fi_ls', name: 'FI/LS', re: /(fi\s*\/\s*ls|fi-ls|rcbo|fehlerstrom-?\s*(?:und\s*)?leitungsschutz|fi-?ls-schalter|fi\/ls)/ },
     { id: 'afdd', name: 'Brandschutzschalter', re: /(afdd|brandschutzschalter|fehlerlichtbogen)/ },
     { id: 'fi', name: 'FI', re: /(fi-?schutzschalter|fehlerstrom-?schutzschalter|fi-?schalter|\brcd\b|\brccb\b|\bfi\b)/ },
@@ -205,8 +205,10 @@
       else m.mass = { h: a[0], b: a[1], t: a[2] };
     }
     if ((r = t.match(/\bbxt\s?:?\s?(\d{3,4})\s?x\s?(\d{3,4})/))) m.bxt = { b: num(r[1]), t: num(r[2]) };
-    if ((r = t.match(/(\d{2,4})\s?(?:ple|plz)\b/)) || (r = t.match(/\b(?:ple|plz)\s?:?\s?(\d{2,4})/))) m.ple = num(r[1]);
+    if ((r = t.match(/\b(\d)\s?x\s?(\d{1,3})\s?(?:ple|plz)\b/))) m.ple = num(r[1]) * num(r[2]);
+    else if ((r = t.match(/(\d{1,4})\s?(?:ple|plz)\b/)) || (r = t.match(/\b(?:ple|plz)\s?:?\s?(\d{2,4})/))) m.ple = num(r[1]);
     if ((r = t.match(/(\d{1,3})\s?te\b/))) m.te = num(r[1]);
+    if (m.typ === 'schrank' && m.ple == null) { const ms = [...t.matchAll(/\b(\d{1,3})\s?m(?![a-z0-9])/g)].map(x => num(x[1])); if (ms.length) m.ple = Math.max(...ms); }
 
     // Sicherungsgrößen
     if ((r = t.match(/\bnh\s?-?\s?(000|00|0|1|2|3|4a?)\b/)) || (r = t.match(/\bgr(?:oesse|\.)?\s?(000|00|0|1|2|3)\b/))) m.nh = r[1];
@@ -360,7 +362,15 @@
         });
       }
     }
-    return { artikel, pakete, nachTyp, los03, nshvFelder };
+    // Alle Gehäuse/Schränke aus LOS03 und LOS03.1 (auch ohne Maße), für Suchwörter aus der Vorgabe
+    const schrankAlle = [];
+    for (const z of favoriten) {
+      if (z.typ !== 'PRODUCT' || !/^LOS03(\.1)? /.test(z.los + ' ')) continue;
+      if (!/schr|verteiler|vert\.|gehaeuse|gehause|kasten/.test(norm(z.desc))) continue;
+      const tx = [z.desc, z.notes].join(' \n ');
+      schrankAlle.push({ ...z, pfad: pfad(z.los, z.pos), m: merkmale(tx, 'schrank'), hersteller: KATALOG[z.cat] || herstellerAusText(tx) || z.cat || '', such: norm(tx + ' ' + pfad(z.los, z.pos).slice(0, 3).join(' ')) });
+    }
+    return { artikel, pakete, nachTyp, los03, nshvFelder, schrankAlle };
   }
 
   // ---------------------------------------------------------------- Abgleich
@@ -642,8 +652,48 @@
 
   // ---------------------------------------------------------------- Schränke
 
+  // Suchwörter aus der Vorgabe (ohne Merkmale, Hersteller und allgemeine Begriffe)
+  const SCHRANK_ALLG = new Set('schrank schraenke verteiler wandverteiler standverteiler unterverteilung gehaeuse aufputz unterputz stand wand los'.split(' '));
+  const SYNONYM = { vektor: 'vector', universn: 'univers' };
+  function suchwoerter(vorrang) {
+    return tokens(vorrang).map(w => SYNONYM[w] || w)
+      .filter(w => w.length >= 3 && !/\d/.test(w) && !SCHRANK_ALLG.has(w) && !herstellerAusText(w) && !/^(ip|sk|ple|te)$/.test(w));
+  }
+
   function schrankWaehlen(lv, text, index, profil, out, opts) {
-    const aktiv = opts.losAktiv || (() => true);
+    const vorrang = String(opts.vorrang || '');
+    const vn = norm(vorrang);
+    // Los-Vorgabe im Vorgabetext: „LOS03“ / „Los 3“ bzw. „LOS03.1“
+    const losVorgabe = /\blos\s?0?3\.1\b/.test(vn) ? 'LOS03.1' : (/\blos\s?0?3\b(?!\.)/.test(vn) ? 'LOS03' : null);
+    const aktiv = losVorgabe ? (c => c === losVorgabe) : (opts.losAktiv || (() => true));
+    const woerter = suchwoerter(vorrang);
+    if (woerter.length) {
+      const reihen = opts.herstellerVorgabe ? [opts.herstellerVorgabe] : profilReihenfolge(profil, 'schrank');
+      const treffer = (index.schrankAlle || []).filter(a => aktiv(a.los.split(' ')[0]) && woerter.every(w => a.such.includes(w)))
+        .filter(a => !(lv.ip && a.m.ip && a.m.ip < lv.ip) && !(lv.ple && (!a.m.ple || a.m.ple < lv.ple)) && !(lv.sk && a.m.sk && a.m.sk < lv.sk));
+      if (treffer.length) {
+        // Paket bevorzugen, wenn der Treffer Hauptartikel eines LOS03.1-Pakets ist
+        const paketVon = new Map(index.pakete.map(p => [p.items[0].los + '|' + p.items[0].pos, p]));
+        // Dubletten (gleicher Artikel in LOS03.1 und LOS03): LOS03.1 behalten
+        const gesehen = new Map();
+        for (const a of treffer.slice().sort((x, y) => (/^LOS03\.1/.test(y.los) ? 1 : 0) - (/^LOS03\.1/.test(x.los) ? 1 : 0))) if (!gesehen.has(a.ext)) gesehen.set(a.ext, a);
+        let liste = [...gesehen.values()];
+        for (const h of reihen) { const v = liste.filter(a => norm(a.hersteller) === norm(h)); if (v.length) { liste = v; break; } }
+        liste.sort((x, y) => (paketVon.has(y.los + '|' + y.pos) - paketVon.has(x.los + '|' + x.pos)) ||
+          (lv.mass && x.m.mass && y.m.mass ? (Math.abs(x.m.mass.h - lv.mass.h) + Math.abs(x.m.mass.b - lv.mass.b)) - (Math.abs(y.m.mass.h - lv.mass.h) + Math.abs(y.m.mass.b - lv.mass.b)) : 0) ||
+          ((x.m.ple || 0) - (y.m.ple || 0)));
+        const a = liste[0];
+        const pk = paketVon.get(a.los + '|' + a.pos);
+        out.paket = pk || { desc: a.desc, notes: a.notes, items: [a], hersteller: a.hersteller, pfad: a.pfad, m: a.m };
+        out.kandidaten = liste.slice(0, 5);
+        out.hinweise.push(`Nach Vorgabe gewählt („${woerter.join(' ')}“) aus ${a.los.split(' ')[0]}${pk ? ' (Paket)' : ' (Einzelartikel)'}; ${liste.length} Treffer`);
+        if (!pk) out.hinweise.push('PL: Ausbau (VERIAS, Kleinteile, Prüfprotokoll, Transport, Montage) ergänzen');
+        if (!lv.ple && liste.length > 1) out.hinweise.push('Größe prüfen: kleinster passender gewählt, PLE in der Vorgabe angeben (z. B. „48 PLE“)');
+        out.ampel = 'gelb';
+        return out;
+      }
+      out.hinweise.push(`Vorgabe „${woerter.join(' ')}“: kein Schrank in ${losVorgabe || 'LOS03.1/LOS03'} gefunden, Auswahl nach Maßen`);
+    }
     const gleich = !!opts.los03Gleich;
     const reihenfolge = opts.herstellerVorgabe ? [opts.herstellerVorgabe] : profilReihenfolge(profil, 'schrank');
     const teBedarf = opts.teBedarf || 0;
