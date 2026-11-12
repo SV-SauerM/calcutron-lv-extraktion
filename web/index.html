@@ -44,7 +44,29 @@ label.feld { display: inline-flex; gap: 6px; align-items: center; color: var(--m
 .drop { border: 1.5px dashed var(--linie); border-radius: 6px; padding: 14px; text-align: center; color: var(--mut); }
 .drop.aktiv { border-color: var(--akzent); color: var(--akzent); }
 .tabelle { overflow-x: auto; background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; }
-table { border-collapse: collapse; width: 100%; min-width: 1100px; font-size: 13px; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13px; }
+th.zahl, td.zahl { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr.haupt { cursor: pointer; }
+tr.haupt:hover td { background: color-mix(in srgb, var(--akzent) 5%, var(--fl)); }
+tr.haupt.offen td { background: color-mix(in srgb, var(--akzent) 8%, var(--fl)); border-bottom-color: transparent; }
+td.pfeil { width: 22px; color: var(--mut); padding-right: 0; }
+td.text .kurz { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.marken { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.marke { font-size: 11.5px; color: var(--mut); border: 1px solid var(--linie); border-radius: 3px; padding: 0 5px; }
+.marke.rot { color: var(--rot); border-color: var(--rot); } .marke.akz { color: var(--akzent); border-color: var(--akzent); }
+td.gew .desc { color: var(--mut); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
+tr.detail > td { background: color-mix(in srgb, var(--akzent) 4%, var(--fl)); padding: 4px 12px 16px 34px; }
+.dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 24px; }
+.dgrid h4 { margin: 8px 0 6px; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); font-weight: 600; }
+.dgrid .feldzeile { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.dgrid .langtext { white-space: pre-wrap; color: var(--fg); max-height: 180px; overflow: auto; font-size: 12.5px; }
+.liste { display: grid; gap: 4px; }
+.liste .li { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; }
+.liste .li .ext { font-family: var(--mono); white-space: nowrap; }
+.liste .li .ds { flex: 1; min-width: 0; color: var(--mut); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.liste .li button { padding: 1px 8px; font-size: 12px; }
+input.menge { width: 64px; }
+.ampel.manuell { background: var(--linie); color: var(--fg); }
 th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); padding: 8px 10px; border-bottom: 1px solid var(--linie); position: sticky; top: 0; background: var(--fl); }
 td { padding: 7px 10px; border-bottom: 1px solid var(--linie); vertical-align: top; }
 tr.unter td { background: color-mix(in srgb, var(--bg) 55%, var(--fl)); }
@@ -55,6 +77,7 @@ input.vorgabe:not(:placeholder-shown) { border-color: var(--akzent); background:
 .vstat::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .vstat.ok { color: var(--gruen); } .vstat.ok::before { background: var(--gruen); }
 .vstat.nicht { color: var(--rot); font-weight: 500; } .vstat.nicht::before { background: var(--rot); }
+td.hin2 { color: var(--mut); font-size: 12.5px; }
 td.leer { text-align: center; color: var(--mut); padding: 40px 16px; }
 td.leer strong { display: block; color: var(--fg); font-weight: 500; margin-bottom: 4px; }
 td.oz, td.ext { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
@@ -170,7 +193,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   <div class="tabelle">
     <table>
-      <thead><tr><th>OZ</th><th>Ampel</th><th>LV-Text</th><th>Erkannt</th><th>Gewählt</th><th>Ext. ID</th><th>Hersteller</th><th>Hinweise</th></tr></thead>
+      <thead><tr><th aria-label="Details"></th><th>OZ</th><th>Ampel</th><th>LV-Text</th><th>Gewählt</th><th class="zahl">Menge</th></tr></thead>
       <tbody id="erg"></tbody>
     </table>
   </div>
@@ -328,8 +351,8 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       }
       ergebnisse = neu;
       zeigeErgebnis();
-      const z = { gruen: 0, gelb: 0, rot: 0 }; ergebnisse.forEach(e => z[e.ampel]++);
-      status(`Fertig: ${n} Positionen in ${((performance.now() - t0) / 1000).toFixed(1)} s abgeglichen – grün ${z.gruen}, gelb ${z.gelb}, rot ${z.rot}.`, 'ok');
+      const z = { gruen: 0, gelb: 0, rot: 0, manuell: 0 }; ergebnisse.forEach(e => z[e.ampel]++);
+      status(`Fertig: ${n} Positionen in ${((performance.now() - t0) / 1000).toFixed(1)} s abgeglichen – grün ${z.gruen}, gelb ${z.gelb}, rot ${z.rot}${z.manuell ? ', Platzhalter ' + z.manuell : ''}.`, 'ok');
       $('exportBarebone').disabled = $('exportPruef').disabled = false;
     } catch (e) {
       status('Abbruch beim Abgleich: ' + (e && e.message || e) + '. Bitte die Datei und diese Meldung an Claude geben.', 'fehler');
@@ -360,49 +383,173 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     return s;
   }
 
-  function zeile(pos, erg, unter, menge, refFeld) {
-    const g = erg.paket ? erg.paket.items[0] : erg.artikel;
-    const tr = el('tr', unter ? { class: 'unter' } : {});
-    const text = unter ? `${menge} × ${erg.text}` : `${pos.kurztext}${pos.langtext ? '\n' + pos.langtext.split('\n').slice(0, 2).join(' ') : ''}`;
-    const tdText = el('td', { class: 'text' }, el('div', { text: text.slice(0, 220) }));
+  const AMPEL = { gruen: 'grün', gelb: 'gelb', rot: 'rot', manuell: 'Platzh.' };
+  function gewaehlt(erg) { return erg ? (erg.paket ? erg.paket.items[0] : erg.artikel) : null; }
+
+  function kopfZeile(e, refFeld) {
+    const pos = e.pos, erg = e.haupt || { ampel: e.ampel, hinweise: [], m: {} };
+    const g = gewaehlt(e.haupt);
+    const tr = el('tr', { class: 'haupt' + (pos._offen ? ' offen' : ''), tabindex: '0', 'aria-expanded': String(!!pos._offen) });
+    const marken = el('div', { class: 'marken' });
+    if (pos._hinweis) marken.append(el('span', { class: 'marke ' + (erg.vorgabe && erg.vorgabe.status === 'nicht' ? 'rot' : 'akz'), text: erg.vorgabe && erg.vorgabe.status === 'nicht' ? 'Vorgabe nicht gefunden' : 'Vorgabe' }));
+    if (pos._hersteller) marken.append(el('span', { class: 'marke akz', text: pos._hersteller }));
+    if (pos._wahl) marken.append(el('span', { class: 'marke akz', text: 'von Hand gewählt' }));
+    if ((pos._zusatz || []).length) marken.append(el('span', { class: 'marke akz', text: `+${pos._zusatz.length} Zusatz` }));
+    if (e.unter.length) marken.append(el('span', { class: 'marke', text: `${e.unter.length} Bestückungszeilen` }));
+    const nHin = (erg.hinweise || []).filter(h => !/^Vorgabe:/.test(h)).length;
+    if (nHin) marken.append(el('span', { class: 'marke', text: `${nHin} Hinweis${nHin > 1 ? 'e' : ''}` }));
+    const tdText = el('td', { class: 'text' }, el('div', { class: 'kurz', text: pos.kurztext }), marken);
     if (refFeld) tdText.append(refFeld);
-    if (!unter) {
-      const inp = el('input', { type: 'text', class: 'vorgabe', id: 'v-' + pos.oz, placeholder: 'Vorgabe, geht vor LV-Text (z. B. 4-polig 36 kA Hager h3+ · vector 48 PLE · LOS03)', 'aria-label': 'Vorgabe für Position ' + pos.oz });
-      inp.value = pos._hinweis || '';
-      inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
-      inp.addEventListener('change', () => { pos._hinweis = inp.value.trim(); rechne(); });
-      tdText.append(inp);
-      if (pos._hinweis && erg.vorgabe) tdText.append(el('div', { class: 'vstat ' + erg.vorgabe.status, text: erg.vorgabe.text, role: 'status' }));
-    }
+    const tdGew = el('td', { class: 'gew' });
+    if (erg.ampel === 'manuell') tdGew.append(el('div', { text: erg.placeholder }));
+    else if (g) tdGew.append(el('div', { class: 'ext', text: `${erg.paket ? erg.paket.hersteller : g.hersteller} ${g.ext}` }), el('div', { class: 'desc', text: (erg.paket ? 'Paket: ' + erg.paket.desc : g.desc).replace(/\n/g, ' ') }));
+    else tdGew.append(el('div', { class: 'desc', text: erg.placeholder || (e.unter.length ? 'nur Bestückung' : '—') }));
     tr.append(
-      el('td', { class: 'oz', text: unter ? '' : pos.oz }),
-      el('td', {}, el('span', { class: 'ampel ' + erg.ampel, text: { gruen: 'grün', gelb: 'gelb', rot: 'rot' }[erg.ampel] })),
-      tdText,
-      el('td', { class: 'merk', text: (erg.typ ? LVX.TYP_NAME[erg.typ] + ' · ' : '') + LVX.merkmalText(erg.m || {}) }),
-      el('td', { text: g ? (erg.paket ? 'Paket: ' + erg.paket.desc : g.desc).replace(/\n/g, ' ').slice(0, 70) : (erg.placeholder || '—') }),
-      el('td', { class: 'ext', text: g ? `${erg.paket ? erg.paket.hersteller : g.hersteller} ${g.ext}` : '' }),
-      el('td', {}, unter ? '' : herstellerAuswahl(pos, erg)),
-      el('td', { class: 'hin' }, hinweisListe(erg))
-    );
+      el('td', { class: 'pfeil', text: pos._offen ? '▾' : '▸' }),
+      el('td', { class: 'oz', text: pos.oz }),
+      el('td', {}, el('span', { class: 'ampel ' + e.ampel, text: AMPEL[e.ampel] })),
+      tdText, tdGew,
+      el('td', { class: 'zahl', text: `${pos.menge} ${pos.einheit || ''}`.trim() }));
+    const umschalten = () => { pos._offen = !pos._offen; zeigeErgebnis(); };
+    tr.addEventListener('click', ev => { if (!ev.target.closest('input,select,button,a')) umschalten(); });
+    tr.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); umschalten(); } });
     return tr;
+  }
+
+  function unterZeile(u) {
+    const g = gewaehlt(u.erg);
+    return el('tr', { class: 'unter' },
+      el('td'), el('td'),
+      el('td', {}, el('span', { class: 'ampel ' + u.erg.ampel, text: AMPEL[u.erg.ampel] })),
+      el('td', { class: 'text', text: `${u.menge} × ${u.erg.text}` }),
+      el('td', { class: 'gew' }, g ? el('div', { class: 'ext', text: `${g.hersteller} ${g.ext}` }) : el('div', { class: 'desc', text: '—' }), g ? el('div', { class: 'desc', text: g.desc.replace(/\n/g, ' ') }) : ''),
+      el('td', { class: 'zahl', text: u.menge + ' je St.' }));
+  }
+
+  function zusatzZeile(z) {
+    return el('tr', { class: 'unter' },
+      el('td'), el('td'),
+      el('td', {}, el('span', { class: 'ampel gruen', text: '+' })),
+      el('td', { class: 'text', text: 'Zusatzartikel' }),
+      el('td', { class: 'gew' }, el('div', { class: 'ext', text: `${z.artikel.hersteller} ${z.artikel.ext}` }), el('div', { class: 'desc', text: z.artikel.desc.replace(/\n/g, ' ') })),
+      el('td', { class: 'zahl', text: z.menge + ' je St.' }));
+  }
+
+  function artikelListe(liste, aktion, knopf) {
+    const box = el('div', { class: 'liste' });
+    for (const a of liste) {
+      const b = el('button', { type: 'button', text: knopf });
+      b.addEventListener('click', () => aktion(a));
+      box.append(el('div', { class: 'li' }, b, el('span', { class: 'ext', text: `${a.hersteller || ''} ${a.ext}` }), el('span', { class: 'ds', title: a.desc, text: String(a.desc).replace(/\n/g, ' ') }), el('span', { class: 'marke', text: String(a.los || '').split(' ')[0] })));
+    }
+    return box;
+  }
+
+  function detailZeile(e) {
+    const pos = e.pos, erg = e.haupt || { hinweise: [], m: {}, kandidaten: [] };
+    const sp = el('div', { class: 'dgrid' });
+
+    // Spalte 1: LV-Text, Erkannt, Hinweise
+    const s1 = el('div');
+    s1.append(el('h4', { text: 'LV-Text' }), el('div', { class: 'langtext', text: [pos.kurztext, pos.langtext].filter(Boolean).join('\n') }));
+    s1.append(el('h4', { text: 'Erkannt' }), el('div', { class: 'merk', text: (erg.typ ? LVX.TYP_NAME[erg.typ] + ' · ' : '') + LVX.merkmalText(erg.m || {}) || '—' }));
+    if ((erg.hinweise || []).length) s1.append(el('h4', { text: 'Hinweise' }), hinweisListe(erg));
+
+    // Spalte 2: Steuerung
+    const s2 = el('div');
+    s2.append(el('h4', { text: 'Vorgabe (geht vor LV-Text)' }));
+    const inp = el('input', { type: 'text', class: 'vorgabe', id: 'v-' + pos.oz, placeholder: 'z. B. 4-polig 36 kA Hager h3+ · vector 48 PLE · LOS03 · HPW631NR', 'aria-label': 'Vorgabe für Position ' + pos.oz });
+    inp.value = pos._hinweis || '';
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') inp.blur(); });
+    inp.addEventListener('change', () => { pos._hinweis = inp.value.trim(); rechne(); });
+    s2.append(inp);
+    if (pos._hinweis && erg.vorgabe) s2.append(el('div', { class: 'vstat ' + erg.vorgabe.status, text: erg.vorgabe.text, role: 'status' }));
+
+    const zeileH = el('div', { class: 'feldzeile' });
+    const hs = herstellerAuswahl(pos, erg);
+    if (hs) zeileH.append(el('label', { class: 'feld', text: 'Hersteller' }), hs);
+    const mId = 'm-' + pos.oz;
+    const mi = el('input', { type: 'number', class: 'menge', id: mId, min: '0', step: 'any' });
+    mi.value = pos._menge || 1;
+    mi.addEventListener('change', () => { pos._menge = Number(mi.value) > 0 ? Number(mi.value) : 1; rechne(); });
+    zeileH.append(el('label', { class: 'feld', for: mId, text: 'Menge je LV-Stück' }), mi);
+    s2.append(el('h4', { text: 'Auswahl' }), zeileH);
+
+    const phId = 'ph-' + pos.oz;
+    const ph = el('input', { type: 'checkbox', id: phId });
+    ph.checked = !!pos._platzhalter;
+    const phText = el('input', { type: 'text', class: 'vorgabe', placeholder: 'Text des Platzhalters, z. B. nicht in unserem Lieferumfang', 'aria-label': 'Platzhaltertext' });
+    phText.value = pos._platzhalterText || '';
+    phText.hidden = !pos._platzhalter;
+    ph.addEventListener('change', () => { pos._platzhalter = ph.checked; if (ph.checked && !pos._platzhalterText) pos._platzhalterText = pos._hinweis || 'nicht in unserem Lieferumfang'; rechne(); });
+    phText.addEventListener('keydown', ev => { if (ev.key === 'Enter') phText.blur(); });
+    phText.addEventListener('change', () => { pos._platzhalterText = phText.value.trim(); rechne(); });
+    s2.append(el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: phId }, ph, 'Als Platzhalter übernehmen (keinen Artikel)')), phText);
+    if (pos._wahl) {
+      const zurueck = el('button', { type: 'button', text: 'Automatische Auswahl wiederherstellen' });
+      zurueck.addEventListener('click', () => { pos._wahl = null; rechne(); });
+      s2.append(el('div', { class: 'feldzeile' }, zurueck));
+    }
+
+    // Spalte 3: Kandidaten, Zusatzartikel, Suche
+    const s3 = el('div');
+    const kand = (erg.kandidaten || []).filter(k => k && k.ext);
+    if (kand.length && !pos._platzhalter) {
+      s3.append(el('h4', { text: 'Kandidaten' }), artikelListe(kand, a => { pos._wahl = a.ext; rechne(); }, 'Nehmen'));
+    }
+    s3.append(el('h4', { text: 'Zusatzartikel' }));
+    const zl = el('div', { class: 'liste' });
+    (pos._zusatz || []).forEach((z, i) => {
+      const a = (e.zusatz || []).find(x => x.ext === z.ext);
+      const m = el('input', { type: 'number', class: 'menge', min: '0', step: 'any', 'aria-label': 'Menge ' + z.ext });
+      m.value = z.menge;
+      m.addEventListener('change', () => { z.menge = Number(m.value) > 0 ? Number(m.value) : 1; rechne(); });
+      const x = el('button', { type: 'button', text: 'Entfernen' });
+      x.addEventListener('click', () => { pos._zusatz.splice(i, 1); rechne(); });
+      zl.append(el('div', { class: 'li' }, m, el('span', { class: 'ext', text: a ? `${a.artikel.hersteller} ${z.ext}` : z.ext }), el('span', { class: 'ds', text: a ? a.artikel.desc.replace(/\n/g, ' ') : 'nicht mehr in den Favoriten' }), x));
+    });
+    if (!(pos._zusatz || []).length) zl.append(el('div', { class: 'hinweis', text: 'Noch keine. Über die Suche hinzufügen.' }));
+    s3.append(zl);
+    const sId = 's-' + pos.oz;
+    const sInp = el('input', { type: 'search', class: 'vorgabe', id: sId, placeholder: 'Favoriten durchsuchen: Text oder Artikelnummer', 'aria-label': 'Favoriten durchsuchen' });
+    const sErg = el('div');
+    let tmr = null;
+    sInp.addEventListener('input', () => {
+      clearTimeout(tmr);
+      tmr = setTimeout(() => {
+        sErg.textContent = '';
+        const q = sInp.value.trim();
+        if (q.length < 2) return;
+        const t = LVX.suche(index, q, 12);
+        if (!t.length) { sErg.append(el('div', { class: 'hinweis', text: 'Kein Favorit gefunden.' })); return; }
+        sErg.append(artikelListe(t, a => { pos._zusatz = (pos._zusatz || []).concat({ ext: a.ext, menge: 1 }); rechne(); }, '+ Zusatz'));
+        const als = el('div', { class: 'hinweis', text: 'Tipp: „+ Zusatz“ fügt eine weitere Unterposition hinzu. Als Hauptartikel setzt du einen Treffer über „Nehmen“ bei den Kandidaten oder per Artikelnummer im Vorgabefeld.' });
+        sErg.append(als);
+      }, 200);
+    });
+    s3.append(el('h4', { text: 'Suche in den Favoriten' }), sInp, sErg);
+
+    sp.append(s1, s2, s3);
+    return el('tr', { class: 'detail' }, el('td', { colspan: '6' }, sp));
   }
 
   function zeigeErgebnis() {
     const tb = $('erg'); tb.textContent = '';
-    const z = { gruen: 0, gelb: 0, rot: 0 }; let ref = 0, refOk = 0;
+    const z = { gruen: 0, gelb: 0, rot: 0, manuell: 0 }; let ref = 0, refOk = 0;
     for (const e of ergebnisse) {
       z[e.ampel]++;
       const p = e.pos;
       let refFeld = null;
       if (p.referenz && p.referenz.length && e.haupt && !e.unter.length) {
-        const g = e.haupt.paket ? e.haupt.paket.items[0] : e.haupt.artikel;
+        const g = gewaehlt(e.haupt);
         const ok = !!g && p.referenz.includes(String(g.ext));
         ref++; if (ok) refOk++;
         refFeld = el('div', { class: 'ref ' + (ok ? 'ok' : 'nok'), text: (ok ? '✓ wie Referenz ' : '✗ Referenz ') + p.referenz.join('/') });
       }
-      if (e.haupt) tb.append(zeile(p, e.haupt, false, 1, refFeld));
-      else tb.append(zeile(p, { ampel: e.ampel, hinweise: e.unter.length ? ['Bestückung ohne Schrank'] : ['nicht verarbeitet'], m: {}, text: p.kurztext }, false, 1, refFeld));
-      for (const u of e.unter) tb.append(zeile(p, u.erg, true, u.menge));
+      tb.append(kopfZeile(e, refFeld));
+      for (const u of e.unter) tb.append(unterZeile(u));
+      for (const zz of e.zusatz || []) tb.append(zusatzZeile(zz));
+      if (p._offen) tb.append(detailZeile(e));
     }
     const n = ergebnisse.length || 1;
     const pz = x => Math.round(100 * x / n) + ' %';
@@ -412,7 +559,13 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       el('span', { class: 'chip gruen', text: `grün ${z.gruen} · ${pz(z.gruen)}` }),
       el('span', { class: 'chip gelb', text: `gelb ${z.gelb} · ${pz(z.gelb)}` }),
       el('span', { class: 'chip rot', text: `rot ${z.rot} · ${pz(z.rot)}` }));
+    if (z.manuell) c.append(el('span', { class: 'chip neutral', text: `Platzhalter ${z.manuell}` }));
     if (ref) c.append(el('span', { class: 'chip neutral', text: `wie Referenz ${refOk}/${ref}` }));
+    const auf = el('button', { type: 'button', class: 'chip neutral', text: 'Alle aufklappen' });
+    auf.addEventListener('click', () => { ergebnisse.forEach(e => { e.pos._offen = true; }); zeigeErgebnis(); });
+    const zu = el('button', { type: 'button', class: 'chip neutral', text: 'Alle zuklappen' });
+    zu.addEventListener('click', () => { ergebnisse.forEach(e => { e.pos._offen = false; }); zeigeErgebnis(); });
+    c.append(auf, zu);
   }
 
   function neuesProjekt() {
@@ -423,7 +576,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     $('quelleHinweis').textContent = '';
     $('exportBarebone').disabled = $('exportPruef').disabled = true;
     const tb = $('erg'); tb.textContent = '';
-    tb.append(el('tr', {}, el('td', { class: 'leer', colspan: '8' },
+    tb.append(el('tr', {}, el('td', { class: 'leer', colspan: '6' },
       el('strong', { text: 'Noch kein LV geladen' }),
       'Oben „LV öffnen“ wählen oder die Datei auf das gestrichelte Feld ziehen. Zum Ausprobieren: „Beispiel-LV laden“.')));
     status('');
@@ -513,7 +666,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     $('exportBarebone').disabled = $('exportPruef').disabled = true;
     $('quelleHinweis').textContent = quelleText(lvVoll, name);
     const tb = $('erg'); tb.textContent = '';
-    tb.append(el('tr', {}, el('td', { class: 'leer', colspan: '8' }, el('strong', { text: 'Auswahl treffen' }), 'Titel oder Positionen, die nicht gebraucht werden, oben abhaken. Dann „Abgleich starten“.')));
+    tb.append(el('tr', {}, el('td', { class: 'leer', colspan: '6' }, el('strong', { text: 'Auswahl treffen' }), 'Titel oder Positionen, die nicht gebraucht werden, oben abhaken. Dann „Abgleich starten“.')));
     $('auswahl').hidden = false; $('auswahlBtn').disabled = false;
     zeigeBaum();
     status(`${name}: ${lvVoll.positionen.length} Positionen gelesen. Nicht benötigte Titel oder Positionen abhaken, dann „Abgleich starten“.`, 'info');

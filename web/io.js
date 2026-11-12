@@ -195,7 +195,7 @@
   function gruppenZeile(pos, text, menge, notes) { return [pos, pos, 'GROUP', text, null, null, null, null, menge, null, null, null, notes || null]; }
   function platzhalterZeile(pos, text, notes) { return [pos, pos, 'PLACEHOLDER', text, null, null, null, null, 1, null, null, null, notes || null]; }
 
-  const AMPEL_TEXT = { gruen: 'grün', gelb: 'gelb', rot: 'rot' };
+  const AMPEL_TEXT = { gruen: 'grün', gelb: 'gelb', rot: 'rot', manuell: 'Platzhalter' };
 
   /**
    * ergebnisse: Liste aus LVX.verarbeitePosition
@@ -241,9 +241,10 @@
       const p = e.pos;
       zeilen.push(gruppenZeile(gpos, `${p.oz} ${p.kurztext}`.slice(0, 250), p.menge || 1, p.langtext || null));
       let k = 0;
-      if (e.haupt) schreibe(gpos + '.' + (++k), e.haupt, 1, p.oz, p.kurztext, e.unter.length ? null : p.referenz);
+      if (e.haupt) schreibe(gpos + '.' + (++k), e.haupt, Number(p._menge) > 0 ? Number(p._menge) : 1, p.oz, p.kurztext, e.unter.length ? null : p.referenz);
       for (const u of e.unter) schreibe(gpos + '.' + (++k), u.erg, u.menge, p.oz, u.erg.text, null);
-      if (!e.haupt && !e.unter.length) schreibe(gpos + '.1', { ampel: 'rot', hinweise: ['nicht verarbeitet'], m: {}, text: p.kurztext }, 1, p.oz, p.kurztext, p.referenz);
+      for (const z of e.zusatz || []) schreibe(gpos + '.' + (++k), { ampel: 'gruen', artikel: z.artikel, hinweise: ['Zusatzartikel (von Hand)'], m: z.artikel.m || {}, text: z.artikel.desc }, z.menge, p.oz, z.artikel.desc, null);
+      if (!e.haupt && !e.unter.length && !(e.zusatz || []).length) schreibe(gpos + '.1', { ampel: 'rot', hinweise: ['nicht verarbeitet'], m: {}, text: p.kurztext }, 1, p.oz, p.kurztext, p.referenz);
     }
     lohnFallback.forEach(p => {
       const z = pruef.find(r => r[0] === p);

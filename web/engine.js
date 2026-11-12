@@ -845,6 +845,31 @@
    * Verarbeitet eine LV-Position {oz, kurztext, langtext, menge, einheit}
    */
   function verarbeitePosition(pos, index, opts = {}) {
+    const res0 = verarbeitePositionAuto(pos, index, opts);
+    const res = res0;
+    // Zusatzartikel (von Hand ergänzt)
+    res.zusatz = (pos._zusatz || []).map(z => ({ artikel: (index.nachExt || new Map()).get(kompakt(z.ext)), menge: z.menge || 1, ext: z.ext })).filter(z => z.artikel);
+    // Platzhalter: nichts übernehmen, nur Text
+    if (pos._platzhalter) {
+      const txt = String(pos._platzhalterText || '').trim() || 'OFFEN: ' + String(pos.kurztext || '').slice(0, 60);
+      res.haupt = { text: pos.kurztext, m: {}, typ: null, ampel: 'manuell', artikel: null, paket: null, kandidaten: res.haupt ? res.haupt.kandidaten : [], placeholder: txt, hinweise: ['Platzhalter (von Hand): ' + txt], manuell: true };
+      res.unter = [];
+      res.ampel = 'manuell';
+      return res;
+    }
+    // Artikel von Hand gewählt (aus Kandidaten oder Suche)
+    if (pos._wahl && res.haupt) {
+      const a = (index.nachExt || new Map()).get(kompakt(pos._wahl));
+      if (a) {
+        res.haupt = { ...res.haupt, artikel: a, paket: null, ampel: 'gruen', hinweise: [`Von Hand gewählt: ${a.hersteller} ${a.ext}`] };
+        const alle = [res.haupt, ...res.unter.map(u => u.erg)];
+        res.ampel = alle.some(e => e.ampel === 'rot') ? 'rot' : alle.some(e => e.ampel === 'gelb') ? 'gelb' : 'gruen';
+      }
+    }
+    return res;
+  }
+
+  function verarbeitePositionAuto(pos, index, opts = {}) {
     const text = [pos.kurztext, pos.langtext].filter(Boolean).join('\n');
     const hinweis = String(pos._hinweis || '').trim();
     if (hinweis) {
@@ -880,8 +905,26 @@
     return res;
   }
 
+  // Freitextsuche über alle Favoriten (alle Wörter müssen vorkommen)
+  function suche(index, q, max = 12) {
+    const w = tokens(q);
+    if (!w.length) return [];
+    const k = kompakt(q);
+    const treffer = [];
+    const gesehen = new Set();
+    for (const a of index.artikel.concat(index.schrankAlle || [])) {
+      const key = a.cat + '|' + a.ext;
+      if (gesehen.has(key)) continue;
+      const t = a._such || (a._such = textVon(a));
+      const extTreffer = k.length >= 3 && kompakt(a.ext || '').startsWith(k);
+      if (extTreffer || w.every(x => t.includes(x))) { treffer.push({ a, rang: extTreffer ? 0 : 1 }); gesehen.add(key); }
+    }
+    treffer.sort((x, y) => x.rang - y.rang || String(x.a.desc).length - String(y.a.desc).length);
+    return treffer.slice(0, max).map(x => x.a);
+  }
+
   return {
     KATALOG, TYPEN, TYP_NAME, KATEGORIE, PROFIL_STANDARD, PFLICHT,
-    norm, tokens, merkmale, merkmalText, signatur, typErkennen, baueIndex, gleicheAb, bestueckung, verarbeitePosition
+    norm, tokens, merkmale, merkmalText, signatur, typErkennen, baueIndex, gleicheAb, bestueckung, verarbeitePosition, suche, kompakt
   };
 });
