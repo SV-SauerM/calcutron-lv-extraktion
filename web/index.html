@@ -49,6 +49,8 @@ th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .04e
 td { padding: 7px 10px; border-bottom: 1px solid var(--linie); vertical-align: top; }
 tr.unter td { background: color-mix(in srgb, var(--bg) 55%, var(--fl)); }
 tr.unter td.text { padding-left: 26px; }
+td.leer { text-align: center; color: var(--mut); padding: 40px 16px; }
+td.leer strong { display: block; color: var(--fg); font-weight: 500; margin-bottom: 4px; }
 td.oz, td.ext { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
 td.merk { font-family: var(--mono); font-size: 12px; color: var(--mut); }
 td.hin { color: var(--mut); font-size: 12.5px; max-width: 360px; }
@@ -74,6 +76,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   <div class="leiste">
     <label class="datei primaer" for="lvDatei">LV öffnen (.xlsx, .x83)<input id="lvDatei" type="file" accept=".xlsx,.x83,.X83,.xml"></label>
+    <button id="neuBtn">Neues Projekt</button>
     <button id="beispielBtn">Beispiel-LV laden</button>
     <label class="feld" for="vorgabe">Hersteller für alles
       <select id="vorgabe"><option value="">nach Profil</option></select></label>
@@ -237,8 +240,21 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (ref) c.append(el('span', { class: 'chip neutral', text: `wie Referenz ${refOk}/${ref}` }));
   }
 
+  function neuesProjekt() {
+    lv = null; ergebnisse = [];
+    $('vorgabe').value = '';
+    $('zahlen').textContent = '';
+    $('quelleHinweis').textContent = '';
+    $('exportBarebone').disabled = $('exportPruef').disabled = true;
+    const tb = $('erg'); tb.textContent = '';
+    tb.append(el('tr', {}, el('td', { class: 'leer', colspan: '8' },
+      el('strong', { text: 'Noch kein LV geladen' }),
+      'Oben „LV öffnen“ wählen oder die Datei auf das gestrichelte Feld ziehen. Zum Ausprobieren: „Beispiel-LV laden“.')));
+    status('');
+  }
+
   function setzeLv(daten, name) {
-    lv = daten;
+    lv = JSON.parse(JSON.stringify(daten));
     $('quelleHinweis').textContent = `${name}${lv.titel ? ' · ' + lv.titel : ''} · Quelle: ${{ xlsx: 'Tabelle', barebone: 'Calcutron-Barebone', x83: 'GAEB X83' }[lv.quelle] || lv.quelle}`;
     rechne();
   }
@@ -256,6 +272,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   ['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('aktiv'); }));
   ['dragleave', 'drop'].forEach(t => drop.addEventListener(t, () => drop.classList.remove('aktiv')));
   drop.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) oeffneLv(f); });
+  $('neuBtn').addEventListener('click', () => { neuesProjekt(); status('Neues Projekt: alles zurückgesetzt.'); });
   $('beispielBtn').addEventListener('click', () => setzeLv(window.LVX_BEISPIEL, 'Beispiel'));
   $('vorgabe').addEventListener('change', rechne);
 
@@ -303,7 +320,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (gespeichert && gespeichert.zeilen) fav = gespeichert;
     baue(); favMeta(gespeichert ? 'lokal aktualisiert' : '');
     fuelleVorgabe(); zeigeProfil();
-    setzeLv(window.LVX_BEISPIEL, 'Beispiel');
+    neuesProjekt();
   })();
 })();
 </script>
