@@ -74,7 +74,11 @@ input.menge { width: 64px; }
 th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--mut); padding: 8px 10px; border-bottom: 1px solid var(--linie); position: sticky; top: 0; background: var(--fl); }
 td { padding: 7px 10px; border-bottom: 1px solid var(--linie); vertical-align: top; }
 tr.unter td { background: color-mix(in srgb, var(--bg) 55%, var(--fl)); }
-tr.unter td.text { padding-left: 26px; }
+tr.unter td { font-size: 12.5px; }
+tr.unter td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--akzent) 35%, transparent); }
+tr.unter td:nth-child(3) { padding-left: 22px; }
+tr.unter td.text { padding-left: 40px; }
+tr.unter td.gew { padding-left: 22px; }
 input.vorgabe { width: 100%; box-sizing: border-box; margin-top: 6px; font-size: 12.5px; padding: 4px 7px; }
 input.vorgabe:not(:placeholder-shown) { border-color: var(--akzent); background: color-mix(in srgb, var(--akzent) 8%, var(--fl)); }
 .vstat { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; }
