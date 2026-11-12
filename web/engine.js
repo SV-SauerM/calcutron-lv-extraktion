@@ -32,7 +32,7 @@
     { id: 'nh_leiste', name: 'NH-Leiste', re: /(leiste|sasil|\bsl-?\d)/, need: /(nh|sicherung|sasil)/ },
     { id: 'nh_trenner', name: 'Sicherungslasttrenner', re: /(sicherungs-?lasttrenn|sicherungs-?lastschalter|nh-?trenner|nh-?lasttrenn|\blatr\b|ltl\d)/ },
     { id: 'sls', name: 'SLS', re: /(\bsls\b|selektive?r? haupt)/ },
-    { id: 'lsw', name: 'Leistungsschalter', re: /(leistungsschalter|\bacb\b|\bmccb\b|izmx|\bnzm|\bhw[1-4]\b|kompaktschalter)/ },
+    { id: 'lsw', name: 'Leistungsschalter', re: /(leistungsschalter|\bacb\b|\bmccb\b|izmx|\bnzm|\bhw[1-4]\b)/ },
     { id: 'lts', name: 'Lasttrennschalter', re: /(lasttrennschalter|lasttrenner|hauptschalter|trennschalter|lastschalter)/ },
     { id: 'sockel', name: 'Sicherungssockel', re: /(sicherungssockel|sicherungsunterteil|sicherungselement|sockel d0|d0[123]-?sockel|neozed-?sockel|kunstst\.?sockel|sockel)/, need: /(d0|neozed|sicherung|e18|e14|e33)/ },
     { id: 'sich_einsatz', name: 'Sicherungseinsatz', re: /(sicherungseinsatz|sicherungseinsaetze|schmelzeinsatz|nh-?sicherung)/ },
@@ -336,6 +336,7 @@
     kontakte: 'exakt', klemmeArt: 'exakt', sk: 'min'
   };
 
+  const VOLT_TYPEN = new Set(['netzteil', 'koppelrelais', 'schuetz', 'zeitrelais', 'fernschalter', 'trafo', 'schaltuhr', 'motorschutz']);
   function regelFuer(key, typ) {
     if (key === 'In') return IN_MIN_TYPEN.has(typ) ? 'min' : 'exakt';
     return MERKMAL_REGEL[key];
@@ -396,7 +397,17 @@
   function gleicheAb(text, index, opts = {}) {
     const profil = opts.profil || PROFIL_STANDARD;
     const lv = merkmale(text, opts.typ);
+    // Vorgabe des Bearbeiters (Hinweistext) geht vor den LV-Text: Typ und Merkmale überschreiben
+    const vorrang = String(opts.vorrang || '').trim();
+    if (vorrang) {
+      const v = merkmale(vorrang);
+      for (const [k, w] of Object.entries(v)) if (w != null && k !== 'fabrikat' && k !== 'gleichwertig') lv[k] = w;
+      if (v.typ) lv.typ = v.typ;
+    }
+    // Spannung nur bei Geräten mit Spule bzw. Ausgangsspannung bewerten
+    if (lv.volt != null && !VOLT_TYPEN.has(lv.typ)) { delete lv.volt; delete lv.stromart; delete lv.voltAlle; }
     const out = { text, m: lv, typ: lv.typ, ampel: 'rot', artikel: null, paket: null, kandidaten: [], hinweise: [] };
+    if (vorrang) out.hinweise.push('Vorgabe: ' + vorrang);
     if (!lv.typ) { out.hinweise.push('Gerätetyp nicht erkannt'); return out; }
 
     // Sonderfälle
@@ -427,7 +438,8 @@
     for (const a of kand) {
       const p = pruefe(lv, a, lv.typ);
       if (!p.ok) continue;
-      geprueft.push({ a, p, score: jaccard(new Set(tokens(text)), a.tok) });
+      const vt = new Set(tokens(vorrang));
+      geprueft.push({ a, p, score: jaccard(new Set(tokens(text + ' ' + vorrang)), a.tok) + (vt.size ? 0.5 * jaccard(vt, a.tok) : 0) });
     }
     // Streng: Pflichtmerkmale, die das LV nennt, müssen am Favorit lesbar sein
     const pflichtLv = (PFLICHT[lv.typ] || []).filter(k => lv[k] != null);
@@ -612,6 +624,11 @@
    */
   function verarbeitePosition(pos, index, opts = {}) {
     const text = [pos.kurztext, pos.langtext].filter(Boolean).join('\n');
+    const hinweis = String(pos._hinweis || '').trim();
+    if (hinweis) {
+      const h = herstellerAusText(hinweis);
+      if (h && !pos._hersteller) opts = { ...opts, herstellerVorgabe: h };
+    }
     const best = bestueckung(pos.langtext);
     const res = { pos, haupt: null, unter: [] };
     if (best.length) {
@@ -629,11 +646,11 @@
       const schrankText = [pos.kurztext, ohne].filter(Boolean).join('\n');
       if (merkmale(schrankText).typ === 'schrank' || typKurz === 'schrank') {
         const te = res.unter.reduce((s, u) => s + u.menge * teSchaetzung(u.erg), 0);
-        res.haupt = gleicheAb(schrankText, index, { ...opts, teBedarf: te, typ: 'schrank' });
+        res.haupt = gleicheAb(schrankText, index, { ...opts, teBedarf: te, typ: 'schrank', vorrang: hinweis });
       }
     } else {
       // Kurztext bestimmt den Gerätetyp, Langtext liefert zusätzliche Merkmale
-      res.haupt = gleicheAb(text, index, { ...opts, typ: typKurz || undefined });
+      res.haupt = gleicheAb(text, index, { ...opts, typ: typKurz || undefined, vorrang: hinweis });
     }
     // Gesamtampel
     const alle = [res.haupt, ...res.unter.map(u => u.erg)].filter(Boolean);
