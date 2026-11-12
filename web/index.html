@@ -406,6 +406,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     return s;
   }
 
+  const NLU = 'Nicht in unserem Lieferumfang';
   const AMPEL = { gruen: 'grün', gelb: 'gelb', rot: 'rot', manuell: 'Platzh.' };
   function gewaehlt(erg) { return erg ? (erg.paket ? erg.paket.items[0] : erg.artikel) : null; }
 
@@ -510,7 +511,11 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     weg.addEventListener('click', () => { ov.aus = !ov.aus; rechne(); });
     const zeile = el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: id + '-m', text: 'Menge je LV-Stück' }), mi, weg);
     if (ov.wahl) { const z = el('button', { type: 'button', text: 'Automatische Auswahl' }); z.addEventListener('click', () => { ov.wahl = null; rechne(); }); zeile.append(z); }
-    s2.append(el('h4', { text: 'Auswahl' }), zeile, el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: id + '-p' }, ph, 'Als Platzhalter übernehmen (keinen Artikel)')), phT);
+    const nlu = el('input', { type: 'checkbox', id: id + '-nlu' });
+    nlu.checked = !!ov.platzhalter && ov.platzhalterText === NLU;
+    nlu.addEventListener('change', () => { ov.platzhalter = nlu.checked; ov.platzhalterText = nlu.checked ? NLU : ''; rechne(); });
+    s2.append(el('h4', { text: 'Auswahl' }), zeile, el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: id + '-p' }, ph, 'Als Platzhalter übernehmen (keinen Artikel)')), phT,
+      el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: id + '-nlu' }, nlu, 'Nicht in unserem Lieferumfang')));
     const s3 = el('div');
     const nehmen = a => [['Nehmen', x => { ov.wahl = LVX.schluessel(x); ov.platzhalter = false; ov.aus = false; rechne(); }]];
     const kand = (u.erg.kandidaten || []).filter(k => k && (k.ext || k.typ === 'PLACEHOLDER'));
@@ -591,6 +596,10 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     phText.addEventListener('keydown', ev => { if (ev.key === 'Enter') phText.blur(); });
     phText.addEventListener('change', () => { pos._platzhalterText = phText.value.trim(); rechne(); });
     s2.append(el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: phId }, ph, 'Als Platzhalter übernehmen (keinen Artikel)')), phText);
+    const nlu = el('input', { type: 'checkbox', id: phId + '-nlu' });
+    nlu.checked = !!pos._platzhalter && pos._platzhalterText === NLU;
+    nlu.addEventListener('change', () => { pos._platzhalter = nlu.checked; pos._platzhalterText = nlu.checked ? NLU : ''; rechne(); });
+    s2.append(el('div', { class: 'feldzeile' }, el('label', { class: 'feld', for: phId + '-nlu' }, nlu, 'Nicht in unserem Lieferumfang')));
     if (pos._wahl) {
       const zurueck = el('button', { type: 'button', text: 'Automatische Auswahl wiederherstellen' });
       zurueck.addEventListener('click', () => { pos._wahl = null; rechne(); });
