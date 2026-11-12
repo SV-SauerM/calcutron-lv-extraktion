@@ -350,13 +350,14 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const t0 = performance.now();
     const vorgabe = $('vorgabe').value || null;
     const n = lv.positionen.length;
+    const projektHss = LVX.projektHss(lvVoll ? lvVoll.positionen : lv.positionen);
     $('exportBarebone').disabled = $('exportPruef').disabled = true;
     sperre(true);
     try {
       const neu = [];
       for (let i = 0; i < n; i++) {
         const p = lv.positionen[i];
-        neu.push(LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe, losAktiv, los03Gleich: losEinst.gleich }));
+        neu.push(LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe, losAktiv, los03Gleich: losEinst.gleich, projektHss }));
         if (i % 10 === 9 || i === n - 1) {
           status(`Gleiche ab: ${i + 1} von ${n} Positionen …`, 'laeuft', (i + 1) / n);
           await pause();

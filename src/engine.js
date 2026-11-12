@@ -918,57 +918,108 @@
   /**
    * Verarbeitet eine LV-Position {oz, kurztext, langtext, menge, einheit}
    */
-  // Automatische Zusätze für Schaltfelder aus LOS03.1: Hauptsammelschiene (LOS04, Länge = Feldbreite),
-  // Leistungsschalter laut Langtext (LOS06) und Feldverteilschiene bei Einspeisefeldern
+  // Bemessungsstrom des Hauptsammelschienensystems im ganzen LV (für Felder ohne eigene Angabe)
+  function projektHss(positionen) {
+    let max = 0;
+    for (const p of positionen || []) {
+      const t = norm([p.kurztext, p.langtext].join(' '));
+      if (!/(hauptsammelschiene|sammelschienenfeld|sammelschienensystem|kuppelfeld)/.test(t)) continue;
+      const m = merkmale([p.kurztext, p.langtext].join(' '), 'schrank');
+      if (m.In && m.In > max) max = m.In;
+    }
+    return max || null;
+  }
+
+  // Sammelschienen-Gruppe aus LOS04: art = 'hauptsammelschiene' | 'feldverteilschiene'
+  function schieneWaehlen(index, opts, art, pol, minIn, icw) {
+    const losAktiv = opts.losAktiv || (() => true);
+    if (!losAktiv('LOS04')) return null;
+    const alle = (index.gruppen || []).filter(g => /^LOS04/.test(g.los) && g.blatt && new RegExp(art, 'i').test(g.desc) && !/belastet/i.test(g.pfad.join(' ')) && new RegExp('\\b' + pol + '\\s?pol', 'i').test(g.desc))
+      .map(g => { const n = norm(g.desc); const a = n.match(/(\d{2,4})\s?a\b/); const k = n.match(/icw1s\s?=\s?(\d{1,3})\s?ka/); return { g, In: a ? num(a[1]) : 0, icw: k ? num(k[1]) : null }; })
+      .filter(x => x.In >= minIn)
+      .sort((x, y) => x.In - y.In);
+    const mitIcw = icw ? alle.filter(x => x.icw == null || x.icw >= icw) : alle;
+    return { mitIcw: mitIcw[0] || null, nachIn: alle[0] || null };
+  }
+
+  const FVS_LAENGE_LS = 1.4; // Anbindung Leistungsschalter bzw. Hauptsammelschiene → Feldverteilschiene (m)
+
+  // Automatische Zusätze für Schaltfelder aus LOS03.1:
+  //  - Hauptsammelschiene (Länge = Feldbreite)
+  //  - Leistungsschalter laut Langtext + Feldverteilschiene 1,40 m (nur wenn ein Leistungsschalter ausgeschrieben ist)
+  //  - SL-/NH-Leisten-Abgangsfeld: Hauptsammelschiene laut LV + Feldverteilschiene 3-polig, 1,40 m + Feldbreite,
+  //    so groß wie die Hauptsammelschiene, höchstens 1600 A
   function autoZusatz(pos, res, index, opts) {
     const h = res.haupt;
     if (!h || h.typ !== 'schrank' || !h.paket) return [];
     const text = [pos.kurztext, pos.langtext].filter(Boolean).join('\n');
     const t = norm(text);
-    if (!/(einspeisefeld|kuppelfeld|abgangsfeld|sammelschienenfeld|sammelschienensystem|hauptsammelschiene|nshv|bauartnachweis)/.test(t)) return [];
+    if (!/(einspeisefeld|kuppelfeld|abgangsfeld|sammelschienenfeld|sammelschienensystem|hauptsammelschiene|nshv|bauartnachweis|leistenfeld|nh-?trenner|nh-?leiste)/.test(t)) return [];
     const m = merkmale(text, 'schrank');
-    const In = m.In || 0;
-    if (In < 250) return [];
+    const art = feldArt(t);
+    const sl = art === 'leiste';
+    const hssIn = sl ? (m.In || opts.projektHss || 0) : (m.In || 0);
+    if (hssIn < 250) return [];
     const out = [];
     const pole = /5-?polig|l1\s?-\s?l3\s?,\s?n\s?,\s?pe/.test(t) ? 5 : /4-?polig/.test(t) ? 4 : /3-?polig/.test(t) ? 3 : 5;
     const icw = m.icw || 0;
     const breite = m.mass ? m.mass.b : (m.bxt ? m.bxt.b : null);
-    const losAktiv = opts.losAktiv || (() => true);
-    const schiene = (art, pol, minIn) => {
-      const liste = (index.gruppen || []).filter(g => /^LOS04/.test(g.los) && losAktiv('LOS04') && g.blatt && new RegExp(art, 'i').test(g.desc) && !/belastet/i.test(g.pfad.join(' ')) && new RegExp('\\b' + pol + '\\s?pol', 'i').test(g.desc))
-        .map(g => { const n = norm(g.desc); const a = n.match(/(\d{2,4})\s?a\b/); const k = n.match(/icw1s\s?=\s?(\d{1,3})\s?ka/); return { g, In: a ? num(a[1]) : 0, icw: k ? num(k[1]) : null }; })
-        .filter(x => x.In >= minIn && (!icw || x.icw == null || x.icw >= icw))
-        .sort((x, y) => x.In - y.In);
-      return liste[0] || null;
-    };
-    const hss = schiene('hauptsammelschiene', pole, In);
-    if (hss) out.push({ key: hss.g.key, menge: breite ? breite / 1000 : 1, auto: true,
-      grund: `Hauptsammelschiene ${hss.In} A ${pole}-polig${hss.icw ? ', Icw ' + hss.icw + ' kA' : ''}; Länge ${breite ? '= Feldbreite ' + (breite / 1000).toLocaleString('de-DE') + ' m' : '1 m angesetzt – PL: Länge festlegen'}${/5-?polig|l1/.test(t) ? '' : ' (Polzahl nicht im LV, 5-polig angesetzt)'}` });
-    // Leistungsschalter laut Langtext
+    const lStr = x => x.toLocaleString('de-DE');
+    // Hauptsammelschiene
+    const w = schieneWaehlen(index, opts, 'hauptsammelschiene', pole, hssIn, icw);
+    const hss = w && (sl ? w.nachIn : (w.mitIcw || w.nachIn));
+    if (hss) {
+      const icwText = hss.icw ? `, Icw ${hss.icw} kA` : '';
+      const icwWarn = icw && hss.icw && hss.icw < icw ? ` – Icw ${hss.icw} kA unter gefordertem ${icw} kA, prüfen` : '';
+      out.push({ key: hss.g.key, menge: breite ? breite / 1000 : 1, auto: true,
+        grund: `Hauptsammelschiene ${hss.In} A ${pole}-polig${icwText}${sl && !m.In && opts.projektHss ? ' (laut Hauptsammelschiene im LV)' : ''}; Länge ${breite ? '= Feldbreite ' + lStr(breite / 1000) + ' m' : '1 m angesetzt – PL: Länge festlegen'}${/5-?polig|l1|[34]-?polig/.test(t) ? '' : ' (Polzahl nicht im LV, 5-polig angesetzt)'}${icwWarn}` });
+    }
+    // Leistungsschalter laut Langtext → mit Feldverteilschiene 1,40 m
     const r = t.match(/(?:inkl\.?|inklusive|mit)\s+(?:einem?\s+)?((?:offene[nmrs]?\s+|kompakt-?)?leistungsschalter[^.;\n]*)/);
-    let lsIn = 0;
     if (r) {
       const satz = r[1] + (icw ? ` ${icw} ka` : '') + (/3-?phasig/.test(t) && !/[34]-?polig/.test(r[1]) ? ' 3-polig' : '');
       const e = gleicheAb(satz, index, { ...opts, typ: 'lsw', vorrang: '' });
       const ziel = e.paket && e.paket.gruppe ? e.paket.gruppe.key : (e.artikel ? schluessel(e.artikel) : null);
       if (ziel) {
-        lsIn = (e.paket && e.paket.m && e.paket.m.In) || (e.artikel && e.artikel.m && e.artikel.m.In) || In;
+        const lsM = (e.paket && e.paket.m) || (e.artikel && e.artikel.m) || {};
         out.push({ key: ziel, ext: e.artikel ? e.artikel.ext : null, menge: 1, auto: true, grund: `Leistungsschalter laut LV-Text: ${e.paket ? e.paket.desc + ' (' + (e.paket.pfad[0] || '') + ')' : e.artikel.desc}` });
+        out.push(...fvsFuerLs(index, opts, lsM.In || hssIn, lsM.pole));
       }
     }
-    // Feldverteilschiene im Einspeisefeld
-    if (lsIn && /einspeis/.test(t)) {
-      const fvs = schiene('feldverteilschiene', pole === 5 ? 3 : pole, lsIn);
-      if (fvs) out.push({ key: fvs.g.key, menge: 1, auto: true, grund: `Feldverteilschiene ${fvs.In} A; 1 m angesetzt – PL: Länge festlegen` });
+    // SL-/NH-Leisten-Abgangsfeld: Feldverteilschiene 3-polig, 1,40 m + Feldbreite
+    if (sl && hss) {
+      const fIn = Math.min(hss.In, 1600);
+      const f = schieneWaehlen(index, opts, 'feldverteilschiene', 3, fIn, 0);
+      const fv = f && f.nachIn;
+      if (fv) {
+        const laenge = FVS_LAENGE_LS + (breite ? breite / 1000 : 0);
+        out.push({ key: fv.g.key, menge: Math.round(laenge * 100) / 100, auto: true,
+          grund: `Feldverteilschiene ${fv.In} A 3-polig für NH-Leisten (= Hauptsammelschiene${hss.In > 1600 ? ', max. 1600 A' : ''}); Länge ${lStr(FVS_LAENGE_LS)} m Anbindung + ${breite ? lStr(breite / 1000) + ' m Feldbreite' : 'Feldbreite fehlt – PL: ergänzen'} = ${lStr(laenge)} m` });
+      }
     }
     return out;
+  }
+
+  // Feldverteilschiene 1,40 m für einen ausgeschriebenen Leistungsschalter
+  function fvsFuerLs(index, opts, lsIn, lsPole) {
+    if (!lsIn) return [];
+    const pol = String(lsPole || '3').startsWith('4') ? 4 : 3;
+    const f = schieneWaehlen(index, opts, 'feldverteilschiene', pol, lsIn, 0);
+    const fv = f && (f.nachIn || null);
+    if (!fv) return [];
+    return [{ key: fv.g.key, menge: FVS_LAENGE_LS, auto: true, grund: `Feldverteilschiene ${fv.In} A ${pol}-polig zum Leistungsschalter, ${FVS_LAENGE_LS.toLocaleString('de-DE')} m` }];
   }
 
   function verarbeitePosition(pos, index, opts = {}) {
     const res0 = verarbeitePositionAuto(pos, index, opts);
     const res = res0;
     if (!pos._autoErledigt && !pos._platzhalter && index.gruppen) {
-      const auto = autoZusatz(pos, res, index, opts);
+      let auto = autoZusatz(pos, res, index, opts);
+      const h = res.haupt;
+      if (h && h.typ === 'lsw' && (h.artikel || h.paket) && !res.unter.length) {
+        const lm = (h.paket && h.paket.m) || (h.artikel && h.artikel.m) || {};
+        if ((lm.In || 0) >= 400) auto = auto.concat(fvsFuerLs(index, opts, lm.In, lm.pole));
+      }
       pos._zusatz = auto.concat(pos._zusatz || []);
       pos._autoErledigt = true;
     }
@@ -1078,6 +1129,6 @@
 
   return {
     KATALOG, TYPEN, TYP_NAME, KATEGORIE, PROFIL_STANDARD, PFLICHT,
-    norm, tokens, merkmale, merkmalText, signatur, typErkennen, baueIndex, gleicheAb, bestueckung, verarbeitePosition, suche, kompakt, schluessel
+    norm, tokens, merkmale, merkmalText, signatur, typErkennen, baueIndex, gleicheAb, bestueckung, verarbeitePosition, suche, kompakt, schluessel, projektHss
   };
 });

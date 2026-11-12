@@ -32,3 +32,16 @@ Grundlage ist die Spezifikation im claude.ai-Projekt („Spezifikation Favoriten
 Synthetisches Test-LV, 30 Positionen: grün 21, gelb 9, rot 0 (NSHV jetzt als Feld aus LOS02, immer gelb). Von 18 grünen Positionen mit Referenz stimmen 17 mit der Referenz überein; die Abweichung ist ein gleichwertiger Dehn-Ableiter.
 
 Aussagekraft begrenzt: Die Testtexte sind selbst formuliert. Der eigentliche Test folgt mit echten LV-/Angebots-Paaren.
+
+## Automatik Sammelschienen und Leistungsschalter (Stand 12.11.2026)
+
+Gilt für Schaltfelder aus LOS03.1 (Einspeise-, Kuppel-, Abgangs-, Leistenfeld, Sammelschienensystem):
+
+| Fall | Zusatz | Größe | Länge |
+|---|---|---|---|
+| jedes Feld | Hauptsammelschiene (LOS04) | Nennstrom wie LV; Einspeise-/Kuppelfeld zusätzlich Icw ≥ LV | Feldbreite |
+| Leistungsschalter im Feldtext ausgeschrieben | Leistungsschalter (LOS06-Gruppe bevorzugt) + Feldverteilschiene | FVS ≥ Nennstrom Leistungsschalter | 1,40 m |
+| SL-/NH-Leisten-Abgangsfeld | Hauptsammelschiene laut LV + Feldverteilschiene 3-polig | FVS = Hauptsammelschiene, max. 1600 A | 1,40 m + Feldbreite |
+| eigene LV-Position Leistungsschalter ≥ 400 A | Feldverteilschiene | ≥ Nennstrom, Polzahl wie Schalter | 1,40 m |
+
+Ohne Nennstrom im Leistenfeld gilt der Nennstrom der Hauptsammelschiene aus dem übrigen LV.
