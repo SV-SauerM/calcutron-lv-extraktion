@@ -29,6 +29,6 @@ Grundlage ist die Spezifikation im claude.ai-Projekt („Spezifikation Favoriten
 
 ## Stand 12.11.2026
 
-Synthetisches Test-LV, 30 Positionen: grün 21, gelb 8, rot 1 (NSHV → Platzhalter, wie gewollt). Von 18 grünen Positionen mit Referenz stimmen 17 mit der Referenz überein; die Abweichung ist ein gleichwertiger Dehn-Ableiter.
+Synthetisches Test-LV, 30 Positionen: grün 21, gelb 8, rot 0 (NSHV jetzt als Feld aus LOS02). Von 18 grünen Positionen mit Referenz stimmen 17 mit der Referenz überein; die Abweichung ist ein gleichwertiger Dehn-Ableiter.
 
 Aussagekraft begrenzt: Die Testtexte sind selbst formuliert. Der eigentliche Test folgt mit echten LV-/Angebots-Paaren.

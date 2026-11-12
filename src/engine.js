@@ -111,6 +111,7 @@
       .toLowerCase()
       .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
       .replace(/²/g, '2').replace(/×/g, 'x').replace(/–|—/g, '-')
+      .replace(/\b(\d{1,2})\.(\d{3})\b(?![.,]\d)/g, '$1$2')
       .replace(/(\d),(\d)/g, '$1.$2')
       .replace(/[ \t]+/g, ' ');
   }
@@ -203,6 +204,7 @@
       else if (/bxtxh/.test(vor)) m.mass = { h: a[2], b: a[0], t: a[1] };
       else m.mass = { h: a[0], b: a[1], t: a[2] };
     }
+    if ((r = t.match(/\bbxt\s?:?\s?(\d{3,4})\s?x\s?(\d{3,4})/))) m.bxt = { b: num(r[1]), t: num(r[2]) };
     if ((r = t.match(/(\d{2,4})\s?(?:ple|plz)\b/)) || (r = t.match(/\b(?:ple|plz)\s?:?\s?(\d{2,4})/))) m.ple = num(r[1]);
     if ((r = t.match(/(\d{1,3})\s?te\b/))) m.te = num(r[1]);
 
@@ -272,6 +274,7 @@
   function baueIndex(favoriten) {
     const artikel = [];
     const pakete = [];
+    const los03 = [];
     const gruppen = new Map();
     for (const z of favoriten) {
       if (z.typ === 'GROUP') gruppen.set(z.los + '|' + z.pos, z);
@@ -305,7 +308,15 @@
     }
     for (const z of favoriten) {
       if (z.typ !== 'PRODUCT' && z.typ !== 'SERVICE') continue;
-      if (/^LOS03 /.test(z.los)) continue; // LOS03 ohne Ausbau wird nicht verwendet
+      if (/^LOS03 /.test(z.los)) {
+        // LOS03 (ohne Ausbau) nur als Rückfallebene für Schränke
+        const tx = [z.desc, z.notes].join(' \n ');
+        const mm = merkmale(tx);
+        if (mm.typ === 'schrank' && mm.mass && /schr|verteiler|gehaeuse|gehause|kasten/i.test(norm(z.desc))) {
+          los03.push({ ...z, pfad: pfad(z.los, z.pos), m: mm, hersteller: KATALOG[z.cat] || herstellerAusText(tx) || z.cat || '' });
+        }
+        continue;
+      }
       const p = pfad(z.los, z.pos);
       const eigen = [z.desc, z.notes].join(' \n ');
       let typ = typErkennen(' ' + norm(z.desc) + ' ') || typErkennen(' ' + norm(eigen) + ' ');
@@ -325,7 +336,31 @@
       if (!nachTyp.has(k)) nachTyp.set(k, []);
       nachTyp.get(k).push(a);
     }
-    return { artikel, pakete, nachTyp };
+    // NSHV-Felder aus LOS02: Gruppen „… BxT 800x600mm“ mit allen darunterliegenden Artikeln
+    const nshvFelder = [];
+    const nachLos = new Map();
+    for (const z of favoriten) if (/^LOS02/.test(z.los)) { if (!nachLos.has(z.los)) nachLos.set(z.los, []); nachLos.get(z.los).push(z); }
+    for (const [los, zeilen] of nachLos) {
+      for (const g of zeilen) {
+        if (g.typ !== 'GROUP') continue;
+        const r = norm(g.desc).match(/bxt\s?(\d{3,4})\s?x\s?(\d{3,4})|(\d{3,4})\s?x\s?(\d{3,4})\s?mm/);
+        if (!r) continue;
+        const items = zeilen.filter(z => z.typ !== 'GROUP' && z.pos.startsWith(g.pos + '.'));
+        if (items.length < 3) continue;
+        const p = pfad(los, g.pos);
+        const ptext = norm(p.join(' | ') + ' ' + g.desc);
+        const hersteller = /unimes|hager/.test(ptext) ? 'Hager' : /xenergy|eaton/.test(ptext) ? 'Eaton' : (KATALOG[items[0].cat] || '');
+        const sys = ptext.match(/(\d{4})\s?a\s?-\s?(\d{4})\s?mm/) || ptext.match(/(\d{4})\s?a/);
+        nshvFelder.push({
+          los, pos: g.pos, desc: g.desc, notes: g.notes, items, pfad: p, hersteller,
+          art: feldArt(norm(g.desc + ' ' + (g.notes || '').slice(0, 200))),
+          b: num(r[1] || r[3]), t: num(r[2] || r[4]),
+          sysIn: sys ? num(sys[1]) : null, h: sys && sys[2] ? num(sys[2]) : 2000,
+          m: merkmale(g.desc + ' ' + (g.notes || ''), 'nshv')
+        });
+      }
+    }
+    return { artikel, pakete, nachTyp, los03, nshvFelder };
   }
 
   // ---------------------------------------------------------------- Abgleich
@@ -412,11 +447,12 @@
 
     // Sonderfälle
     if (lv.typ === 'nshv') {
-      const sys = (lv.In >= 1600 || (lv.form && lv.form > '2b')) ? 'LOS02 (Unimes/xEnergy)' : 'LOS03.1';
-      out.placeholder = 'OFFEN: NSHV – Preset';
-      out.hinweise.push(`PL: NSHV-Feldaufbau festlegen (Preset), Systemwahl laut Regel 12: ${sys}`);
-      out.ampel = 'rot';
-      return out;
+      // Regel 12: In ≥ 1600 A oder Form höher als 2b → LOS02; sonst Anreihverteiler aus LOS03.1
+      const los02 = lv.In >= 1600 || (lv.form && lv.form > '2b') || /xenergy|unimes/.test(norm(text + ' ' + vorrang));
+      if (los02) return nshvWaehlen(lv, text, index, profil, out, opts);
+      out.hinweise.push('NSHV unter 1600 A und Form ≤ 2b: Anreihverteiler aus LOS03.1 (Regel 12)');
+      lv.typ = out.typ = 'schrank';
+      return schrankWaehlen(lv, text + ' anreih', index, profil, out, opts);
     }
     if (lv.typ === 'sammelschiene') {
       out.placeholder = 'OFFEN: Sammelschiene';
@@ -515,6 +551,64 @@
   }
 
   const MIN_KEYS = ['kA', 'icw', 'ip', 'ple'];
+  // Feldart einer NSHV-Position bzw. eines LOS02-Feldes
+  function feldArt(t) {
+    if (/\beck(feld|schrank)/.test(t)) return 'eck';
+    if (/combiway/.test(t)) return 'abgang';
+    if (/kuppel/.test(t)) return 'kuppel';
+    if (/schubeinsatz|steckeinsatz|motorstarter/.test(t)) return 'schub';
+    if (/sasil|stecktechnik|xr mixed/.test(t)) return 'sasil';
+    if (/fuseline|leistenfeld|sicherungs-?last|nh-?leiste|\bleisten/.test(t)) return 'leiste';
+    if (/ep module|modulschrank|individuellen ausbau|reiheneinbau|installationsverteil|verteiler-?innenausbau/.test(t)) return 'modul';
+    if (/combiway/.test(t)) return 'abgang';
+    if (/einspeis/.test(t)) return 'einspeise';
+    if (/leistungsschalterfeld/.test(t)) return 'einspeise';
+    if (/abgang/.test(t)) return 'abgang';
+    return null;
+  }
+
+  // NSHV-Feld aus LOS02 wählen (Eaton → xEnergy, Hager → Unimes)
+  function nshvWaehlen(lv, text, index, profil, out, opts) {
+    const t = norm(text);
+    let art = feldArt(t);
+    if (!art) { out.placeholder = 'OFFEN: NSHV-Feld'; out.hinweise.push('PL: Feldart nicht erkannt (Einspeise-, Abgangs-, Kuppel-, Leisten-, Modulfeld)'); return out; }
+    const reihenfolge = opts.herstellerVorgabe ? [opts.herstellerVorgabe] : (profil.reihenfolge['NSHV-Systeme'] || ['Hager', 'Eaton']);
+    // Hager: Leistungsschalterfeld dient als Einspeise- und Abgangsfeld
+    const passtArt = f => f.art === art || (f.hersteller === 'Hager' && art === 'abgang' && f.art === 'einspeise' && !/combiway|kabelraum/.test(t));
+    let kand = [], gewaehlt = null, fallback = false;
+    for (let i = 0; i < reihenfolge.length; i++) {
+      kand = index.nshvFelder.filter(f => norm(f.hersteller) === norm(reihenfolge[i]) && passtArt(f));
+      if (kand.length) { gewaehlt = reihenfolge[i]; fallback = i > 0; break; }
+    }
+    if (!kand.length) { out.placeholder = 'OFFEN: NSHV-Feld'; out.hinweise.push('PL: kein passendes Feld in LOS02 (' + art + ')'); return out; }
+    const In = lv.In || 0;
+    const hoehe = lv.mass && lv.mass.h >= 2100 ? 2200 : 2000;
+    const bSoll = lv.mass ? lv.mass.b : (lv.bxt ? lv.bxt.b : null), tSoll = lv.mass ? lv.mass.t : (lv.bxt ? lv.bxt.t : null);
+    // Hager: kleinstes Unimes-System mit Nennstrom ≥ LV-Nennstrom; Höhe passend
+    if (gewaehlt === 'Hager') {
+      const sysOk = kand.filter(f => !f.sysIn || f.sysIn >= In);
+      if (sysOk.length) kand = sysOk;
+      const minSys = Math.min(...kand.map(f => f.sysIn || 1e9));
+      kand = kand.filter(f => (f.sysIn || 1e9) === minSys);
+      const hOk = kand.filter(f => f.h === hoehe);
+      if (hOk.length) kand = hOk;
+    }
+    kand.sort((x, y) =>
+      (tSoll ? Math.abs(x.t - tSoll) - Math.abs(y.t - tSoll) : x.t - y.t) ||
+      (bSoll ? Math.abs(x.b - bSoll) - Math.abs(y.b - bSoll) : x.b - y.b));
+    const best = kand[0];
+    out.paket = { desc: best.desc, notes: best.notes, items: best.items, hersteller: best.hersteller, pfad: best.pfad, m: best.m };
+    out.kandidaten = kand.slice(0, 5).map(f => ({ ...f.items[0], desc: f.pfad[0] + ' / ' + f.desc, hersteller: f.hersteller }));
+    const system = best.pfad.find(x => /xenergy|unimes/i.test(x)) || '';
+    out.hinweise.push(`NSHV-Feld aus LOS02: ${system} / ${best.desc}`);
+    if (fallback) out.hinweise.push('Hersteller-Fallback: ' + best.hersteller);
+    if (bSoll && Math.abs(best.b - bSoll) > 0) out.hinweise.push(`Feldbreite ${best.b} statt ${bSoll} mm`);
+    if (tSoll && Math.abs(best.t - tSoll) > 0) out.hinweise.push(`Feldtiefe ${best.t} statt ${tSoll} mm`);
+    out.hinweise.push('PL: Geräte (ACB/MCCB, Leisten) und Sammelschienen separat prüfen');
+    out.ampel = 'gelb';
+    return out;
+  }
+
   function merkmalUnterschiede(a, b) {
     const keys = ['pole', 'In', 'char', 'kA', 'mA', 'fiTyp', 'volt', 'kontakte', 'mm2', 'nh', 'sich', 'ussTyp', 'netz', 'ip'];
     return keys.filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
@@ -564,7 +658,32 @@
       ok.push({ p, abstand, ple: m.ple || 1e6 });
     }
     if (!ok.length) {
-      out.hinweise.push('Kein Schrankpaket in LOS03.1 erfüllt IP/PLE (' + merkmalText(lv) + ')');
+      // Rückfall: Einzelschrank aus LOS03 (ohne Ausbaupaket)
+      const r = [];
+      const paketHaupt = new Set(index.pakete.map(p => p.items[0].los + '|' + p.items[0].pos));
+      const einzel = (index.nachTyp.get('schrank') || []).filter(a => /^LOS03\.1/.test(a.los) && a.m.mass && !paketHaupt.has(a.los + '|' + a.pos) && /schr|verteiler|gehaeuse|gehause/i.test(norm(a.desc)));
+      for (const a of einzel.concat(index.los03 || [])) {
+        const m = a.m;
+        if (lv.ip && (!m.ip || m.ip < lv.ip)) continue;
+        if (lv.ple && m.ple && m.ple < lv.ple) continue;
+        if (lv.sk && m.sk && m.sk < lv.sk) continue;
+        const abstand = lv.mass ? Math.abs(m.mass.h - lv.mass.h) + Math.abs(m.mass.b - lv.mass.b) + Math.abs(m.mass.t - lv.mass.t) : m.mass.h * m.mass.b / 1000;
+        r.push({ a, abstand });
+      }
+      if (!r.length) {
+        out.hinweise.push('Kein Schrank in LOS03.1 oder LOS03 erfüllt IP/PLE/Schutzklasse (' + merkmalText(lv) + ')');
+        return out;
+      }
+      let rr = r;
+      for (const h of reihenfolge) { const v = r.filter(x => norm(x.a.hersteller) === norm(h)); if (v.length) { rr = v; break; } }
+      rr.sort((x, y) => x.abstand - y.abstand);
+      const a = rr[0].a;
+      out.paket = { desc: a.desc, notes: a.notes, items: [a], hersteller: a.hersteller, pfad: a.pfad, m: a.m };
+      out.kandidaten = rr.slice(0, 5).map(x => x.a);
+      out.hinweise.push(`Kein passendes Paket in LOS03.1 – Einzelschrank aus ${a.los.split(' ')[0]} (ohne Ausbaupaket)`);
+      out.hinweise.push('PL: Ausbau (VERIAS, Kleinteile, Prüfprotokoll, Transport, Montage) ergänzen');
+      if (lv.mass && rr[0].abstand > 150) out.hinweise.push(`Maße weichen ab: ${a.m.mass.h}x${a.m.mass.b}x${a.m.mass.t} statt ${lv.mass.h}x${lv.mass.b}x${lv.mass.t}`);
+      out.ampel = 'gelb';
       return out;
     }
     let auswahl = ok, fallback = false;
