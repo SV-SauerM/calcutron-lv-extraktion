@@ -63,6 +63,11 @@ td.hin b { color: var(--fg); font-weight: 500; }
 .ref.ok { color: var(--gruen); } .ref.nok { color: var(--rot); }
 details.profil { background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; padding: 10px 12px; }
 details.profil summary { cursor: pointer; font-weight: 500; }
+.losgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 16px; margin-top: 10px; }
+.losgrid label, .losopt label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
+.losgrid .code { font-family: var(--mono); font-size: 12px; min-width: 5.2em; }
+.losgrid .name { color: var(--mut); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.losopt { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--linie); }
 .profilgrid { display: grid; grid-template-columns: minmax(150px, 220px) 1fr auto; gap: 10px 12px; margin-top: 12px; align-items: start; }
 .profilgrid .kat { font-weight: 500; padding-top: 5px; }
 .hlist { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
@@ -142,6 +147,16 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   <div class="zahlen" id="zahlen"></div>
   <p class="hinweis" id="quelleHinweis"></p>
+
+  <details class="profil" id="loseBox">
+    <summary>Lose (Suchbereich) <span class="meta" id="loseZahl"></span></summary>
+    <div class="losgrid" id="lose"></div>
+    <div class="losopt">
+      <label for="los03Gleich"><input type="checkbox" id="los03Gleich"> LOS03 gleichrangig zu LOS03.1 durchsuchen (sonst nur, wenn in LOS03.1 kein passender Schrank ist)</label>
+      <button type="button" id="loseAlle">Alle Lose</button>
+    </div>
+    <p class="hinweis" style="margin-top:8px">Nur angehakte Lose werden durchsucht. Schränke kommen zuerst als Paket aus LOS03.1; passt dort keiner, wird ein Einzelschrank aus LOS03.1 bzw. LOS03 genommen (gelb, Ausbau ergänzen).</p>
+  </details>
 
   <details class="profil">
     <summary>Herstellerprofil „Standard Hundt“ (Hersteller je Kategorie an- und abwählen, Reihenfolge mit ‹ › ändern)</summary>
@@ -261,6 +276,32 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     for (const h of hs) s.append(el('option', { value: h, text: h }));
   }
 
+  // ---------- Lose (Suchbereich)
+  const losEinst = Object.assign({ aus: [], gleich: false }, lade('lvx-lose', {}));
+  const losAktiv = code => !losEinst.aus.includes(code);
+  function zeigeLose() {
+    const g = $('lose'); g.textContent = '';
+    const lose = [...new Map(fav.zeilen.map(z => [z.los.split(' ')[0], z.los])).entries()].sort((a, b) => a[0].localeCompare(b[0], 'de', { numeric: true }));
+    for (const [code, name] of lose) {
+      const id = 'los-' + code.replace('.', '_');
+      const cb = el('input', { type: 'checkbox', id });
+      cb.checked = losAktiv(code);
+      cb.addEventListener('change', () => {
+        losEinst.aus = cb.checked ? losEinst.aus.filter(x => x !== code) : losEinst.aus.concat(code);
+        speichere('lvx-lose', losEinst); loseZahl(); if (lv) rechne();
+      });
+      g.append(el('label', { for: id, title: name }, cb, el('span', { class: 'code', text: code }), el('span', { class: 'name', text: name.replace(code, '').trim() + (code === 'LOS03' ? ' (Rückfall)' : '') })));
+    }
+    $('los03Gleich').checked = !!losEinst.gleich;
+    loseZahl();
+  }
+  function loseZahl() {
+    const n = new Set(fav.zeilen.map(z => z.los.split(' ')[0])).size;
+    $('loseZahl').textContent = `· ${n - losEinst.aus.length} von ${n} aktiv${losEinst.gleich ? ' · LOS03 gleichrangig' : ''}`;
+  }
+  $('los03Gleich').addEventListener('change', () => { losEinst.gleich = $('los03Gleich').checked; speichere('lvx-lose', losEinst); loseZahl(); if (lv) rechne(); });
+  $('loseAlle').addEventListener('click', () => { losEinst.aus = []; speichere('lvx-lose', losEinst); zeigeLose(); if (lv) rechne(); });
+
   // ---------- Abgleich
   async function rechne() {
     if (!lv) return;
@@ -274,7 +315,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       const neu = [];
       for (let i = 0; i < n; i++) {
         const p = lv.positionen[i];
-        neu.push(LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe }));
+        neu.push(LVX.verarbeitePosition(p, index, { profil, herstellerVorgabe: p._hersteller || vorgabe, losAktiv, los03Gleich: losEinst.gleich }));
         if (i % 10 === 9 || i === n - 1) {
           status(`Gleiche ab: ${i + 1} von ${n} Positionen …`, 'laeuft', (i + 1) / n);
           await pause();
@@ -559,7 +600,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     const gespeichert = await idbGet('favoriten');
     if (gespeichert && gespeichert.zeilen) fav = gespeichert;
     baue(); favMeta(gespeichert ? 'lokal aktualisiert' : '');
-    fuelleVorgabe(); profilAufbauen(); zeigeProfil();
+    fuelleVorgabe(); profilAufbauen(); zeigeProfil(); zeigeLose();
     neuesProjekt();
     status('Bereit. LV öffnen oder hierher ziehen.', 'ok');
   })();

@@ -461,7 +461,8 @@
     }
     if (lv.typ === 'schrank') return schrankWaehlen(lv, text, index, profil, out, opts);
 
-    let kand = (index.nachTyp.get(lv.typ) || []).slice();
+    const losAktiv = opts.losAktiv || (() => true);
+    let kand = (index.nachTyp.get(lv.typ) || []).filter(a => losAktiv(a.los.split(' ')[0]));
     if (!kand.length) { out.hinweise.push(`Kein Favorit vom Typ ${TYP_NAME[lv.typ]}`); return out; }
 
     // Fabrikat verbindlich?
@@ -577,7 +578,7 @@
     const passtArt = f => f.art === art || (f.hersteller === 'Hager' && art === 'abgang' && f.art === 'einspeise' && !/combiway|kabelraum/.test(t));
     let kand = [], gewaehlt = null, fallback = false;
     for (let i = 0; i < reihenfolge.length; i++) {
-      kand = index.nshvFelder.filter(f => norm(f.hersteller) === norm(reihenfolge[i]) && passtArt(f));
+      kand = index.nshvFelder.filter(f => norm(f.hersteller) === norm(reihenfolge[i]) && passtArt(f) && (opts.losAktiv ? opts.losAktiv('LOS02') : true));
       if (kand.length) { gewaehlt = reihenfolge[i]; fallback = i > 0; break; }
     }
     if (!kand.length) { out.placeholder = 'OFFEN: NSHV-Feld'; out.hinweise.push('PL: kein passendes Feld in LOS02 (' + art + ')'); return out; }
@@ -642,74 +643,77 @@
   // ---------------------------------------------------------------- Schränke
 
   function schrankWaehlen(lv, text, index, profil, out, opts) {
-    let pakete = index.pakete.slice();
+    const aktiv = opts.losAktiv || (() => true);
+    const gleich = !!opts.los03Gleich;
     const reihenfolge = opts.herstellerVorgabe ? [opts.herstellerVorgabe] : profilReihenfolge(profil, 'schrank');
-    const ok = [];
     const teBedarf = opts.teBedarf || 0;
-    for (const p of pakete) {
-      const m = p.m;
-      if (lv.ip && (!m.ip || m.ip < lv.ip)) continue;
-      if (lv.ple && (!m.ple || m.ple < lv.ple)) continue;
-      if (lv.sk && m.sk && m.sk < lv.sk) continue;
-      if (teBedarf && !lv.ple && (!m.ple || m.ple < Math.ceil(teBedarf * 1.3))) continue;
-      let abstand = 0;
-      if (lv.mass && m.mass) abstand = Math.abs(m.mass.h - lv.mass.h) + Math.abs(m.mass.b - lv.mass.b) + Math.abs(m.mass.t - lv.mass.t);
-      else if (lv.mass) abstand = 1e6;
-      ok.push({ p, abstand, ple: m.ple || 1e6 });
-    }
-    if (!ok.length) {
-      // Rückfall: Einzelschrank aus LOS03 (ohne Ausbaupaket)
-      const r = [];
-      const paketHaupt = new Set(index.pakete.map(p => p.items[0].los + '|' + p.items[0].pos));
-      const einzel = (index.nachTyp.get('schrank') || []).filter(a => /^LOS03\.1/.test(a.los) && a.m.mass && !paketHaupt.has(a.los + '|' + a.pos) && /schr|verteiler|gehaeuse|gehause/i.test(norm(a.desc)));
-      for (const a of einzel.concat(index.los03 || [])) {
-        const m = a.m;
-        if (lv.ip && (!m.ip || m.ip < lv.ip)) continue;
-        if (lv.ple && m.ple && m.ple < lv.ple) continue;
-        if (lv.sk && m.sk && m.sk < lv.sk) continue;
-        const abstand = lv.mass ? Math.abs(m.mass.h - lv.mass.h) + Math.abs(m.mass.b - lv.mass.b) + Math.abs(m.mass.t - lv.mass.t) : m.mass.h * m.mass.b / 1000;
-        r.push({ a, abstand });
-      }
-      if (!r.length) {
-        out.hinweise.push('Kein Schrank in LOS03.1 oder LOS03 erfüllt IP/PLE/Schutzklasse (' + merkmalText(lv) + ')');
-        return out;
-      }
-      let rr = r;
-      for (const h of reihenfolge) { const v = r.filter(x => norm(x.a.hersteller) === norm(h)); if (v.length) { rr = v; break; } }
-      rr.sort((x, y) => x.abstand - y.abstand);
-      const a = rr[0].a;
-      out.paket = { desc: a.desc, notes: a.notes, items: [a], hersteller: a.hersteller, pfad: a.pfad, m: a.m };
-      out.kandidaten = rr.slice(0, 5).map(x => x.a);
-      out.hinweise.push(`Kein passendes Paket in LOS03.1 – Einzelschrank aus ${a.los.split(' ')[0]} (ohne Ausbaupaket)`);
-      out.hinweise.push('PL: Ausbau (VERIAS, Kleinteile, Prüfprotokoll, Transport, Montage) ergänzen');
-      if (lv.mass && rr[0].abstand > 150) out.hinweise.push(`Maße weichen ab: ${a.m.mass.h}x${a.m.mass.b}x${a.m.mass.t} statt ${lv.mass.h}x${lv.mass.b}x${lv.mass.t}`);
-      out.ampel = 'gelb';
-      return out;
-    }
-    let auswahl = ok, fallback = false;
-    for (let i = 0; i < reihenfolge.length; i++) {
-      const v = ok.filter(x => norm(x.p.hersteller) === norm(reihenfolge[i]));
-      if (v.length) { auswahl = v; fallback = i > 0; break; }
-    }
-    // Typ-Hinweise (Wand/Stand) aus dem Text
     const t = norm(text);
     const wand = /wand|aufputz|\bap\b/.test(t), stand = /stand|anreih/.test(t);
-    auswahl.forEach(x => {
-      const pt = norm(x.p.pfad.join(' ') + ' ' + x.p.desc);
-      x.typStrafe = (wand && !/wand/.test(pt) ? 1 : 0) + (stand && !/stand|anreih/.test(pt) ? 1 : 0);
-    });
-    auswahl.sort((x, y) => x.typStrafe - y.typStrafe || x.abstand - y.abstand || x.ple - y.ple);
-    const best = auswahl[0];
-    out.paket = best.p;
-    out.kandidaten = auswahl.slice(0, 5).map(x => ({ ...x.p.items[0], pfad: x.p.pfad, hersteller: x.p.hersteller }));
+    const abstandVon = m => lv.mass && m.mass ? Math.abs(m.mass.h - lv.mass.h) + Math.abs(m.mass.b - lv.mass.b) + Math.abs(m.mass.t - lv.mass.t) : (lv.mass ? 1e6 : 0);
+    const passt = (m, pleNoetig) => {
+      if (lv.ip && (!m.ip || m.ip < lv.ip)) return false;
+      if (lv.ple && (pleNoetig ? (!m.ple || m.ple < lv.ple) : (m.ple && m.ple < lv.ple))) return false;
+      if (lv.sk && m.sk && m.sk < lv.sk) return false;
+      if (teBedarf && !lv.ple && m.ple && m.ple < Math.ceil(teBedarf * 1.3)) return false;
+      if (teBedarf && !lv.ple && pleNoetig && !m.ple) return false;
+      return true;
+    };
+    // Pakete aus LOS03.1
+    const pak = [];
+    if (aktiv('LOS03.1')) for (const p of index.pakete) {
+      if (!passt(p.m, true)) continue;
+      pak.push({ art: 'paket', p, m: p.m, hersteller: p.hersteller, pfad: p.pfad, desc: p.desc, abstand: abstandVon(p.m), ple: p.m.ple || 1e6 });
+    }
+    // Einzelschränke: LOS03.1 ohne Paket, LOS03
+    const ein = [];
+    const paketHaupt = new Set(index.pakete.map(p => p.items[0].los + '|' + p.items[0].pos));
+    const einzel = aktiv('LOS03.1') ? (index.nachTyp.get('schrank') || []).filter(a => /^LOS03\.1/.test(a.los) && a.m.mass && !paketHaupt.has(a.los + '|' + a.pos) && /schr|verteiler|gehaeuse|gehause/i.test(norm(a.desc))) : [];
+    const los03 = aktiv('LOS03') ? (index.los03 || []) : [];
+    for (const a of einzel.concat(los03)) {
+      if (!passt(a.m, false)) continue;
+      ein.push({ art: 'einzel', a, m: a.m, hersteller: a.hersteller, pfad: a.pfad, desc: a.desc, abstand: lv.mass ? abstandVon(a.m) : a.m.mass.h * a.m.mass.b / 1000, ple: a.m.ple || 1e6 });
+    }
+    const waehle = liste => {
+      if (!liste.length) return null;
+      let auswahl = liste, fallback = false;
+      for (let i = 0; i < reihenfolge.length; i++) {
+        const v = liste.filter(x => norm(x.hersteller) === norm(reihenfolge[i]));
+        if (v.length) { auswahl = v; fallback = i > 0; break; }
+      }
+      auswahl.forEach(x => {
+        const pt = norm(x.pfad.join(' ') + ' ' + x.desc);
+        x.typStrafe = (wand && !/wand|cs-|gehaeuse/.test(pt) ? 1 : 0) + (stand && !/stand|anreih/.test(pt) ? 1 : 0);
+        x.rang = x.abstand + (x.art === 'einzel' ? 50 : 0); // Paket bei gleicher Größe bevorzugt
+      });
+      auswahl.sort((x, y) => x.typStrafe - y.typStrafe || x.rang - y.rang || x.ple - y.ple);
+      return { best: auswahl[0], auswahl, fallback };
+    };
+    let w = waehle(gleich ? pak.concat(ein) : pak);
+    let rueckfall = false;
+    if (!gleich) {
+      const we = waehle(ein);
+      // Rückfall, wenn kein Paket passt oder das beste Paket in den Maßen deutlich weiter weg ist
+      if (we && (!w || (lv.mass && w.best.abstand > 150 && we.best.abstand < w.best.abstand - 50))) { w = we; rueckfall = true; }
+    }
+    if (!w) {
+      out.hinweise.push(`Kein Schrank in ${['LOS03.1', 'LOS03'].filter(aktiv).join(' oder ') || 'den gewählten Losen'} erfüllt IP/PLE/Schutzklasse (${merkmalText(lv)})`);
+      return out;
+    }
+    const best = w.best;
     const gelb = [];
+    if (best.art === 'paket') {
+      out.paket = best.p;
+    } else {
+      const a = best.a;
+      out.paket = { desc: a.desc, notes: a.notes, items: [a], hersteller: a.hersteller, pfad: a.pfad, m: a.m };
+      gelb.push(`${rueckfall ? 'Kein passendes Paket in LOS03.1 – ' : ''}Einzelschrank aus ${a.los.split(' ')[0]} (ohne Ausbaupaket)`);
+      gelb.push('PL: Ausbau (VERIAS, Kleinteile, Prüfprotokoll, Transport, Montage) ergänzen');
+    }
+    out.kandidaten = w.auswahl.slice(0, 5).map(x => x.art === 'paket' ? { ...x.p.items[0], pfad: x.pfad, hersteller: x.hersteller } : x.a);
     if (!lv.ip) gelb.push('IP nicht angegeben');
     if (!lv.mass && !lv.ple && !teBedarf) gelb.push('Maße/PLE nicht angegeben');
-    if (lv.mass && best.p.m.mass) {
-      const d = best.abstand;
-      if (d > 150) gelb.push(`Maße weichen ab: ${best.p.m.mass.h}x${best.p.m.mass.b}x${best.p.m.mass.t} statt ${lv.mass.h}x${lv.mass.b}x${lv.mass.t}`);
-    }
-    if (fallback) gelb.push('Hersteller-Fallback: ' + best.p.hersteller);
+    if (lv.mass && best.m.mass && best.abstand > 150) gelb.push(`Maße weichen ab: ${best.m.mass.h}x${best.m.mass.b}x${best.m.mass.t} statt ${lv.mass.h}x${lv.mass.b}x${lv.mass.t}`);
+    if (w.fallback) gelb.push('Hersteller-Fallback: ' + best.hersteller);
     out.hinweise.push(...gelb);
     out.ampel = gelb.length ? 'gelb' : 'gruen';
     return out;
