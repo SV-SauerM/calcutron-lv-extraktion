@@ -27,8 +27,20 @@ header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content:
 h1 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; }
 h1 small { font-weight: 400; color: var(--mut); font-size: 13px; margin-left: 8px; }
 .meta { color: var(--mut); font-size: 12.5px; font-family: var(--mono); }
-.leiste { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; padding: 12px; }
-.leiste .trenner { flex: 1 1 auto; }
+.leiste { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 20px; background: var(--fl); border: 1px solid var(--linie); border-radius: 6px; padding: 12px 14px; }
+.leiste .block { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.leiste .block + .block { border-left: 1px solid var(--linie); padding-left: 20px; }
+@media (max-width: 960px) { .leiste .block + .block { border-left: 0; padding-left: 0; border-top: 1px solid var(--linie); padding-top: 10px; } }
+.leiste h2 { margin: 0; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--mut); font-weight: 600; }
+.leiste .reihe { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.leiste .cc input { width: 150px; }
+.leiste .cc input:disabled { opacity: .55; }
+.bald { font-size: 11px; color: var(--mut); border: 1px dashed var(--linie); border-radius: 999px; padding: 1px 8px; }
+.einst { grid-column: 1 / -1; border-top: 1px solid var(--linie); padding-top: 8px; }
+.einst summary { cursor: pointer; color: var(--mut); font-size: 13px; }
+.einst-inhalt { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: flex-start; padding-top: 10px; }
+.einst fieldset { border: 1px solid var(--linie); border-radius: 5px; padding: 6px 12px 10px; display: grid; gap: 6px; margin: 0; }
+.einst legend { font-size: 12px; color: var(--mut); padding: 0 4px; }
 button, .datei { font: inherit; font-weight: 500; border-radius: 5px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--linie); background: var(--fl); color: var(--fg); }
 button.primaer, .datei.primaer { background: var(--akzent); color: var(--akzent-fg); border-color: var(--akzent); }
 button:focus-visible, .datei:focus-within, select:focus-visible, input:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
@@ -156,20 +168,58 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   </header>
 
   <div class="leiste">
-    <label class="datei primaer" for="lvDatei">LV öffnen (.xlsx, .x83)<input id="lvDatei" type="file" accept=".xlsx,.x83,.X83,.xml"></label>
-    <button id="undoBtn" disabled title="Rückgängig (Strg+Z)">↶ Rückgängig</button>
-    <button id="redoBtn" disabled title="Wiederholen (Strg+Y)">↷ Wiederholen</button>
-    <button id="neuBtn">Neues Projekt</button>
-    <button id="beispielBtn">Beispiel-LV laden</button>
-    <button id="auswahlBtn" disabled>Auswahl ändern</button>
-    <label class="feld" for="vorgabe">Hersteller für alles
-      <select id="vorgabe"><option value="">nach Profil</option></select></label>
-    <span class="trenner"></span>
-    <button id="exportBarebone" disabled>Barebone (.xlsx)</button>
-    <button id="exportPruef" disabled>Prüfliste (.xlsx)</button>
-    <button id="projSpeichern" disabled>Projekt speichern</button>
-    <label class="datei" for="projDatei">Projekt öffnen<input id="projDatei" type="file" accept=".json,.lvx.json"></label>
-    <label class="datei" for="favDatei">Favoriten aktualisieren<input id="favDatei" type="file" accept=".xlsx" multiple></label>
+    <section class="block" aria-labelledby="bk-ein">
+      <h2 id="bk-ein">Eingang</h2>
+      <div class="reihe">
+        <label class="datei primaer" for="lvDatei">LV öffnen (.xlsx, .x83)<input id="lvDatei" type="file" accept=".xlsx,.x83,.X83,.xml"></label>
+        <label class="datei" for="projDatei">Projekt öffnen<input id="projDatei" type="file" accept=".json,.lvx.json"></label>
+        <button id="beispielBtn">Beispiel-LV laden</button>
+      </div>
+      <div class="reihe cc" title="Folgt mit der Calcutron-Anbindung">
+        <label class="feld" for="ccId">Calcutron-Projekt</label>
+        <input id="ccId" type="text" placeholder="Projekt-ID oder Link" disabled>
+        <button id="ccLaden" disabled>Laden</button>
+        <span class="bald">folgt</span>
+      </div>
+    </section>
+    <section class="block" aria-labelledby="bk-bea">
+      <h2 id="bk-bea">Bearbeiten</h2>
+      <div class="reihe">
+        <button id="undoBtn" disabled title="Rückgängig (Strg+Z)">↶ Rückgängig</button>
+        <button id="redoBtn" disabled title="Wiederholen (Strg+Y)">↷ Wiederholen</button>
+        <button id="auswahlBtn" disabled>Auswahl ändern</button>
+        <button id="neuBtn">Neues Projekt</button>
+      </div>
+      <div class="reihe">
+        <label class="feld" for="vorgabe">Hersteller für alles
+          <select id="vorgabe"><option value="">nach Profil</option></select></label>
+      </div>
+    </section>
+    <section class="block" aria-labelledby="bk-aus">
+      <h2 id="bk-aus">Ausgabe</h2>
+      <div class="reihe">
+        <button id="exportBarebone" disabled>Barebone (.xlsx)</button>
+        <button id="exportPruef" disabled>Prüfliste (.xlsx)</button>
+        <button id="projSpeichern" disabled>Projekt speichern</button>
+      </div>
+      <div class="reihe cc" title="Folgt mit der Calcutron-Anbindung">
+        <button id="ccSenden" disabled>Als neue Quotation an Calcutron</button>
+        <span class="bald">folgt</span>
+      </div>
+    </section>
+    <details class="einst">
+      <summary>Einstellungen</summary>
+      <div class="einst-inhalt">
+        <fieldset>
+          <legend>Favoriten-Quelle</legend>
+          <label class="feld"><input type="radio" name="favQuelle" value="lokal" checked> Lokal (eingebaut bzw. hochgeladene Exporte)</label>
+          <label class="feld"><input type="radio" name="favQuelle" value="calcutron" disabled> Aus Calcutron <span class="bald">folgt</span></label>
+        </fieldset>
+        <div class="reihe">
+          <label class="datei" for="favDatei">Favoriten aktualisieren (Calcutron-Export .xlsx)<input id="favDatei" type="file" accept=".xlsx" multiple></label>
+        </div>
+      </div>
+    </details>
   </div>
 
   <div class="drop" id="drop">LV-Datei hierher ziehen: Calcutron-xlsx, einfache Tabelle (OZ | Kurztext | Langtext | Menge | Einheit), GAEB X83 oder gespeichertes Projekt (.json)</div>
@@ -242,6 +292,24 @@ details.profil summary { cursor: pointer; font-weight: 500; }
   const pause = () => new Promise(r => setTimeout(r, 0));
   let laufNr = 0;
   function sperre(an) { ['lvDatei', 'favDatei'].forEach(id => { $(id).disabled = an; }); ['beispielBtn', 'neuBtn'].forEach(id => { $(id).disabled = an; }); }
+
+  // ---------------------------------------------------------------- Calcutron-Anbindung (Schnittstelle, noch nicht angebunden)
+  // Hier setzt die spätere Integration an. Erwartete Formen:
+  //   ladeProjekt(id)          -> { quelle, titel, positionen: [{ oz, kurztext, langtext, menge, einheit, titelPfad }] }  (wie LVXIO.liesLvXlsx / liesX83)
+  //   ladeFavoriten()          -> { stand, zeilen: [...] }  (wie window.LVX_FAVORITEN)
+  //   sendeQuotation(id, daten) -> legt eine neue Quotation im Projekt an; daten = { zeilen, pruef } aus ausgabe() (Barebone-Struktur)
+  const CALCUTRON = window.LVX_CALCUTRON || {
+    verfuegbar: false,
+    async ladeProjekt() { throw new Error('Calcutron-Anbindung noch nicht verfügbar'); },
+    async ladeFavoriten() { throw new Error('Calcutron-Anbindung noch nicht verfügbar'); },
+    async sendeQuotation() { throw new Error('Calcutron-Anbindung noch nicht verfügbar'); }
+  };
+  // Projekt-ID aus Eingabe oder Calcutron-Link (letzte Zahl/ID im Pfad)
+  function ccProjektId(eingabe) {
+    const t = String(eingabe || '').trim();
+    if (!t) return '';
+    try { const u = new URL(t); const teile = u.pathname.split('/').filter(Boolean); return u.searchParams.get('projectId') || u.searchParams.get('id') || teile.reverse().find(x => /\d/.test(x)) || ''; } catch (e) { return t; }
+  }
 
   let fav = window.LVX_FAVORITEN;
   let index = null, lv = null, ergebnisse = [];
@@ -893,6 +961,50 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       status('Favoriten aktualisiert: ' + neu.join(', '), 'ok');
     } catch (err) { status('Favoriten ließen sich nicht einlesen: ' + err.message, 'fehler'); }
   });
+
+  // ---------- Calcutron-Anbindung (aktiv erst, wenn CALCUTRON.verfuegbar)
+  function ccAktiv() {
+    const an = !!CALCUTRON.verfuegbar;
+    $('ccId').disabled = $('ccLaden').disabled = !an;
+    document.querySelector('input[name=favQuelle][value=calcutron]').disabled = !an;
+    document.querySelectorAll('.bald').forEach(x => { x.hidden = an; });
+    document.querySelectorAll('.cc').forEach(x => { if (an) x.removeAttribute('title'); });
+    $('ccSenden').disabled = !an || $('exportBarebone').disabled;
+  }
+  new MutationObserver(ccAktiv).observe($('exportBarebone'), { attributes: true, attributeFilter: ['disabled'] });
+  ccAktiv();
+  $('ccLaden').addEventListener('click', async () => {
+    const id = ccProjektId($('ccId').value);
+    if (!id) { status('Bitte eine Calcutron-Projekt-ID oder einen Link eintragen.', 'fehler'); return; }
+    try {
+      status(`Lade Calcutron-Projekt ${id} …`, 'laeuft');
+      const daten = await CALCUTRON.ladeProjekt(id);
+      zeigeAuswahl(daten, 'Calcutron-Projekt ' + id);
+    } catch (err) { status('Calcutron-Projekt ließ sich nicht laden: ' + err.message, 'fehler'); }
+  });
+  $('ccSenden').addEventListener('click', async () => {
+    const id = ccProjektId($('ccId').value);
+    if (!id) { status('Bitte die Calcutron-Projekt-ID eintragen, in die die Quotation geschrieben werden soll.', 'fehler'); return; }
+    try {
+      status('Übergebe an Calcutron …', 'laeuft');
+      await CALCUTRON.sendeQuotation(id, ausgabe());
+      status(`Als neue Quotation in Calcutron-Projekt ${id} angelegt.`, 'ok');
+    } catch (err) { status('Übergabe an Calcutron fehlgeschlagen: ' + err.message, 'fehler'); }
+  });
+  try { const q = localStorage.getItem('lvx-favquelle'); if (q === 'calcutron' && CALCUTRON.verfuegbar) document.querySelector('input[name=favQuelle][value=calcutron]').checked = true; } catch (e) {}
+  document.querySelectorAll('input[name=favQuelle]').forEach(r => r.addEventListener('change', async () => {
+    if (!r.checked) return;
+    try { localStorage.setItem('lvx-favquelle', r.value); } catch (e) {}
+    $('favDatei').disabled = r.value !== 'lokal';
+    if (r.value !== 'calcutron') return;
+    try {
+      status('Lade Favoriten aus Calcutron …', 'laeuft');
+      fav = await CALCUTRON.ladeFavoriten();
+      baue(); favMeta('Quelle: Calcutron');
+      if (lv) rechne();
+      status('Favoriten aus Calcutron geladen.', 'ok');
+    } catch (err) { status('Favoriten aus Calcutron nicht verfügbar: ' + err.message, 'fehler'); }
+  }));
 
   // ---------- Rückgängig / Wiederholen (Verlauf der Projektzustände)
   let verlauf = [], vpos = -1, stellt = false;
