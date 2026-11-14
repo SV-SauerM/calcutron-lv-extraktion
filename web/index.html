@@ -87,8 +87,10 @@ th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .04e
 td { padding: 7px 10px; border-bottom: 1px solid var(--linie); vertical-align: top; }
 tr.unter td { background: color-mix(in srgb, var(--bg) 55%, var(--fl)); }
 tr.unter td { font-size: 12.5px; }
-tr.unter td:first-child { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--akzent) 35%, transparent); }
-tr.unter td:nth-child(3) { padding-left: 22px; }
+tr.unter td:first-child { background: transparent; border-bottom-color: transparent; }
+tr.unter td:nth-child(2) { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--akzent) 35%, transparent); }
+tr.unter td:nth-child(2)::before { content: "\2514\2500"; display: block; padding-left: 10px; color: color-mix(in srgb, var(--akzent) 55%, transparent); font-family: var(--mono); }
+tr.unter td:nth-child(3) { padding-left: 46px; }
 tr.unter td.text { padding-left: 40px; }
 tr.unter td.gew { padding-left: 22px; }
 input.vorgabe { width: 100%; box-sizing: border-box; margin-top: 6px; font-size: 12.5px; padding: 4px 7px; }
@@ -257,6 +259,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   <details class="profil">
     <summary>Herstellerprofil „Standard Hundt“ (Hersteller je Kategorie an- und abwählen, Reihenfolge mit ‹ › ändern)</summary>
+    <div style="margin:8px 0"><button type="button" id="profilAlleStandard">Alle Kategorien auf „Standard Hundt“</button></div>
     <div class="profilgrid" id="profil"></div>
     <p class="hinweis" style="margin-top:8px">Angehakte Hersteller werden in der angezeigten Reihenfolge versucht, die Nummer zeigt den Rang. Nicht angehakte bleiben in der Liste und lassen sich jederzeit wieder aktivieren. Änderungen gelten sofort und bleiben in diesem Browser gespeichert. Einzelne Positionen stellst du in der Tabelle über die Spalte „Hersteller“ um.</p>
   </details>
@@ -357,6 +360,13 @@ details.profil summary { cursor: pointer; font-weight: 500; }
 
   // ---------- Profil-Editor
   function profilGeaendert() { profilUebernehmen(true); zeigeProfil(); if (lv) rechne(); }
+  function profilAlleStandard() {
+    for (const [kat, std] of Object.entries(LVX.PROFIL_STANDARD.reihenfolge)) {
+      const rest = (profilListen[kat] || []).filter(x => !std.includes(x.name)).map(x => ({ name: x.name, aktiv: false }));
+      profilListen[kat] = std.map(n => ({ name: n, aktiv: true })).concat(rest);
+    }
+    profilGeaendert();
+  }
   function zeigeProfil() {
     const g = $('profil'); g.textContent = '';
     for (const [kat, liste] of Object.entries(profilListen)) {
@@ -499,7 +509,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (e.unter.length) marken.append(el('span', { class: 'marke', text: `${e.unter.filter(u => !u.aus).length} Bestückungszeilen` }));
     const nHin = (erg.hinweise || []).filter(h => !/^Vorgabe:/.test(h)).length;
     if (nHin) marken.append(el('span', { class: 'marke', text: `${nHin} Hinweis${nHin > 1 ? 'e' : ''}` }));
-    const tdText = el('td', { class: 'text' }, el('div', { class: 'kurz', text: pos.kurztext }), marken);
+    const tdText = el('td', { class: 'text' }, el('div', { class: 'kurz', text: LVXIO.kurzAnzeige(pos) }), marken);
     if (refFeld) tdText.append(refFeld);
     const tdGew = el('td', { class: 'gew' });
     if (erg.ampel === 'manuell') tdGew.append(el('div', { text: erg.placeholder }));
@@ -835,7 +845,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
       const cb = el('input', { type: 'checkbox', id });
       cb.addEventListener('change', () => { p._aus = !cb.checked; aktualisiereHaken(); });
       const z = el('div', { class: 'bzeile' }, el('span', { class: 'klapp leer' }),
-        el('label', { for: id }, cb, el('span', { class: 'boz', text: p.oz }), el('span', { class: 'btext', text: String(p.kurztext || '').slice(0, 140) })),
+        el('label', { for: id }, cb, el('span', { class: 'boz', text: p.oz }), el('span', { class: 'btext', text: LVXIO.kurzAnzeige(p).slice(0, 140) })),
         el('span', { class: 'banz', text: `${p.menge} ${p.einheit || ''}` }));
       baumKnoten.push({ cb, zeile: z, pos: [p] });
       return z;
@@ -1135,6 +1145,7 @@ details.profil summary { cursor: pointer; font-weight: 500; }
     if (gespeichert && gespeichert.zeilen) fav = gespeichert;
     baue(); favMeta(gespeichert ? 'lokal aktualisiert' : '');
     fuelleVorgabe(); profilAufbauen(); zeigeProfil(); zeigeLose();
+    $('profilAlleStandard').addEventListener('click', profilAlleStandard);
     const dl = $('standardtexte'); dl.textContent = '';
     for (const z of fav.zeilen.filter(z => z.typ === 'PLACEHOLDER')) dl.append(el('option', { value: String(z.desc).replace(/\s+/g, ' ').trim() }));
     neuesProjekt();

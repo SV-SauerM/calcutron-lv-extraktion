@@ -33,6 +33,16 @@ Synthetisches Test-LV, 30 Positionen: grün 21, gelb 9, rot 0 (NSHV jetzt als Fe
 
 Aussagekraft begrenzt: Die Testtexte sind selbst formuliert. Der eigentliche Test folgt mit echten LV-/Angebots-Paaren.
 
+## Nachgezogen aus OM-TOOL (Stand 13.11.2026)
+
+Regeln, die nach der Übergabe an OM-TOOL (`calcutron-vibes/OM-TOOL`) dort ergänzt wurden, gelten auch hier:
+
+- **STLB-Bau:** Kurztext „STLB-Bau“ (bzw. leer, „STLB“, „Standardleistungsbuch“) wird in Tabelle, Gruppenname und Prüfliste durch den Anfang des Langtexts ersetzt; der Abgleich liest weiter den Originaltext. Einzelangaben „Höhe '700' mm“, „Breite …“, „Tiefe …“ und „Anzahl Teilungseinheiten '48'“ (= PLE) werden gelesen.
+- **Schrankhöhe ist Mindestmaß**, solange ein ausreichend hoher Schrank passt; sonst gelb „PL: kein Schrank mit Höhe ≥ … mm“. Fehlende Einzelmaße werden nicht verglichen. Vorgabe auch als `H700` oder `700 hoch`.
+- **Hohlwand-/Unterputzverteiler** (Hohlwand, Trockenbauwand, Ständerwand, Unterputz): nur passende Verteiler aus LOS03 (komplett mit Innenausstattung), nie ein Aufputzschrank als Ersatz; sonst rot „OFFEN: Hohlwandverteiler“.
+- **Herstellerprofil:** Button „Alle Kategorien auf ‚Standard Hundt‘“.
+- Unterzeilen in der Tabelle deutlicher eingerückt.
+
 ## Automatik Sammelschienen und Leistungsschalter (Stand 12.11.2026)
 
 Gilt für Schaltfelder aus LOS03.1 (Einspeise-, Kuppel-, Abgangs-, Leistenfeld, Sammelschienensystem):

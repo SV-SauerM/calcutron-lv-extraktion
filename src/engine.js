@@ -211,10 +211,21 @@
       else if (/bxtxh/.test(vor)) m.mass = { h: a[2], b: a[0], t: a[1] };
       else m.mass = { h: a[0], b: a[1], t: a[2] };
     }
+    if (!m.mass) {
+      // Einzelangaben, z. B. STLB-Bau „Höhe '700' mm, Breite '250' mm“ oder Vorgabe „H700“ / „700 hoch“.
+      // Nicht angegebene Werte bleiben 0 und werden beim Größenvergleich ignoriert.
+      const einzeln = name => { const x = t.match(new RegExp('(?:^|[\\s,(])' + name + "\\s*:?\\s*'?(\\d{3,4})'?\\s*mm\\b")); return x ? num(x[1]) : 0; };
+      let h = einzeln('hoehe');
+      const b = einzeln('breite'), tf = einzeln('tiefe');
+      if (!h && ((r = t.match(/(?:^|[\s,])h\s?=?\s?(\d{3,4})(?:\s?mm)?(?=$|[\s,;])/)) || (r = t.match(/\b(\d{3,4})\s?(?:mm\s?)?hoch\b/)))) h = num(r[1]);
+      if (h || b || tf) m.mass = { h, b, t: tf };
+    }
     if ((r = t.match(/\bbxt\s?:?\s?(\d{3,4})\s?x\s?(\d{3,4})/))) m.bxt = { b: num(r[1]), t: num(r[2]) };
     if ((r = t.match(/\b(\d)\s?x\s?(\d{1,3})\s?(?:ple|plz)\b/))) m.ple = num(r[1]) * num(r[2]);
     else if ((r = t.match(/(\d{1,4})\s?(?:ple|plz)\b/)) || (r = t.match(/\b(?:ple|plz)\s?:?\s?(\d{2,4})/))) m.ple = num(r[1]);
     if ((r = t.match(/(\d{1,3})\s?te\b/))) m.te = num(r[1]);
+    // STLB-Bau: „Anzahl Teilungseinheiten '48' St“ = Schrankkapazität
+    if (m.ple == null && (r = t.match(/teilungseinheiten\s*:?\s*'?(\d{1,3})'?/))) m.ple = num(r[1]);
     if (m.typ === 'schrank' && m.ple == null) { const ms = [...t.matchAll(/\b(\d{1,3})\s?m(?![a-z0-9])/g)].map(x => num(x[1])); if (ms.length) m.ple = Math.max(...ms); }
 
     // Sicherungsgrößen
@@ -381,7 +392,7 @@
     const schrankAlle = [];
     for (const z of favoriten) {
       if (z.typ !== 'PRODUCT' || !/^LOS03(\.1)? /.test(z.los + ' ')) continue;
-      if (!/schr|verteiler|vert\.|gehaeuse|gehause|kasten/.test(norm(z.desc))) continue;
+      if (!/schr|verteiler|vert\.|kleinv|gehaeuse|gehause|kasten/.test(norm(z.desc))) continue;
       const tx = [z.desc, z.notes].join(' \n ');
       schrankAlle.push({ ...z, pfad: pfad(z.los, z.pos), m: merkmale(tx, 'schrank'), hersteller: KATALOG[z.cat] || herstellerAusText(tx) || z.cat || '', such: norm(tx + ' ' + pfad(z.los, z.pos).slice(0, 3).join(' ')) });
     }
@@ -506,7 +517,7 @@
   function vorgabeCodes(v) {
     return tokens(v).filter(w => /[a-z]/.test(w) && /\d/.test(w) &&
       !/^\d+(\.\d+)?(a|ka|ma|v|p|mm2?|ple|plz|te|m|s|w|x)$/.test(w) && !/^ip\d\d$/.test(w) && !/^[bcdk]-?\d{1,3}a?$/.test(w) &&
-      !/^\d(p|pol|polig)(\+n)?$/.test(w) && !/^los\d/.test(w) && !/^(nh|d0|gr|t|typ|sk|m)\d/.test(w) && !/^\d+x\d+/.test(w));
+      !/^\d(p|pol|polig)(\+n)?$/.test(w) && !/^los\d/.test(w) && !/^(nh|d0|gr|t|typ|sk|m)\d/.test(w) && !/^\d+x\d+/.test(w) && !/^h\d{3,4}$/.test(w));
   }
   function textVon(a) { return norm([a.ext, a.desc, a.notes, (a.pfad || []).slice(0, 2).join(' ')].join(' ')).replace(/\s+/g, ' '); }
   const kompakt = s => norm(s).replace(/[^a-z0-9+]/g, '');
@@ -724,7 +735,7 @@
     if (!kand.length) { out.placeholder = 'OFFEN: NSHV-Feld'; out.hinweise.push('PL: kein passendes Feld in LOS02 (' + art + ')'); return out; }
     const In = lv.In || 0;
     const hoehe = lv.mass && lv.mass.h >= 2100 ? 2200 : 2000;
-    const bSoll = lv.mass ? lv.mass.b : (lv.bxt ? lv.bxt.b : null), tSoll = lv.mass ? lv.mass.t : (lv.bxt ? lv.bxt.t : null);
+    const bSoll = (lv.mass && lv.mass.b) || (lv.bxt ? lv.bxt.b : null), tSoll = (lv.mass && lv.mass.t) || (lv.bxt ? lv.bxt.t : null);
     // Hager: kleinstes Unimes-System mit Nennstrom ≥ LV-Nennstrom; Höhe passend
     if (gewaehlt === 'Hager') {
       const sysOk = kand.filter(f => !f.sysIn || f.sysIn >= In);
@@ -755,6 +766,11 @@
     return keys.filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
   }
 
+  // Größenabstand je Maß; ein Sollwert 0 heißt „nicht angegeben“ und zählt nicht
+  function massAbst(ist, soll) { return soll ? Math.abs(ist - soll) : 0; }
+  // „700x250x?“: nicht angegebene Maße als „?“
+  function massText(x) { return [x.h, x.b, x.t].map(v => v || '?').join('x'); }
+
   function merkmalText(m) {
     const t = [];
     if (m.pole) t.push(m.pole + 'p');
@@ -766,7 +782,7 @@
     if (m.volt) t.push(m.volt + 'V');
     if (m.mm2) t.push(m.mm2 + 'mm²');
     if (m.ip) t.push('IP' + m.ip);
-    if (m.mass) t.push(`${m.mass.h}x${m.mass.b}x${m.mass.t}`);
+    if (m.mass) t.push(massText(m.mass));
     if (m.ple) t.push(m.ple + ' PLE');
     if (m.nh) t.push('NH' + m.nh);
     if (m.sich && m.sich !== 'NH') t.push(m.sich);
@@ -810,7 +826,7 @@
         let liste = [...gesehen.values()];
         for (const h of reihen) { const v = liste.filter(a => norm(a.hersteller) === norm(h)); if (v.length) { liste = v; break; } }
         liste.sort((x, y) => (paketVon.has(y.los + '|' + y.pos) - paketVon.has(x.los + '|' + x.pos)) ||
-          (lv.mass && x.m.mass && y.m.mass ? (Math.abs(x.m.mass.h - lv.mass.h) + Math.abs(x.m.mass.b - lv.mass.b)) - (Math.abs(y.m.mass.h - lv.mass.h) + Math.abs(y.m.mass.b - lv.mass.b)) : 0) ||
+          (lv.mass && x.m.mass && y.m.mass ? (massAbst(x.m.mass.h, lv.mass.h) + massAbst(x.m.mass.b, lv.mass.b)) - (massAbst(y.m.mass.h, lv.mass.h) + massAbst(y.m.mass.b, lv.mass.b)) : 0) ||
           ((x.m.ple || 0) - (y.m.ple || 0)));
         const a = liste[0];
         const pk = paketVon.get(a.los + '|' + a.pos);
@@ -824,12 +840,14 @@
       }
       out.hinweise.push(`Vorgabe „${woerter.join(' ')}“: kein Schrank in ${losVorgabe || 'LOS03.1/LOS03'} gefunden, Auswahl nach Maßen`);
     }
+    const montage = schrankMontage(norm(text) + ' ' + vn);
+    if (montage) return einbauverteilerWaehlen(montage, lv, index, profil, out, opts, aktiv);
     const gleich = !!opts.los03Gleich;
     const reihenfolge = opts.herstellerVorgabe ? [opts.herstellerVorgabe] : profilReihenfolge(profil, 'schrank');
     const teBedarf = opts.teBedarf || 0;
     const t = norm(text);
     const wand = /wand|aufputz|\bap\b/.test(t), stand = /stand|anreih/.test(t);
-    const abstandVon = m => lv.mass && m.mass ? Math.abs(m.mass.h - lv.mass.h) + Math.abs(m.mass.b - lv.mass.b) + Math.abs(m.mass.t - lv.mass.t) : (lv.mass ? 1e6 : 0);
+    const abstandVon = m => lv.mass && m.mass ? massAbst(m.mass.h, lv.mass.h) + massAbst(m.mass.b, lv.mass.b) + massAbst(m.mass.t, lv.mass.t) : (lv.mass ? 1e6 : 0);
     const passt = (m, pleNoetig) => {
       if (lv.ip && (!m.ip || m.ip < lv.ip)) return false;
       if (lv.ple && (pleNoetig ? (!m.ple || m.ple < lv.ple) : (m.ple && m.ple < lv.ple))) return false;
@@ -853,6 +871,14 @@
       if (!passt(a.m, false)) continue;
       ein.push({ art: 'einzel', a, m: a.m, hersteller: a.hersteller, pfad: a.pfad, desc: a.desc, abstand: lv.mass ? abstandVon(a.m) : a.m.mass.h * a.m.mass.b / 1000, ple: a.m.ple || 1e6 });
     }
+    // LV-Höhe ist Mindestmaß, solange ein ausreichend hoher Schrank passt
+    const hSoll = lv.mass ? lv.mass.h : 0;
+    const hochGenug = x => !x.m.mass || x.m.mass.h >= hSoll;
+    let zuNiedrig = false;
+    if (hSoll && pak.concat(ein).some(x => x.m.mass && hochGenug(x))) {
+      pak.splice(0, pak.length, ...pak.filter(hochGenug));
+      ein.splice(0, ein.length, ...ein.filter(hochGenug));
+    } else if (hSoll) zuNiedrig = true;
     const waehle = liste => {
       if (!liste.length) return null;
       let auswahl = liste, fallback = false;
@@ -892,10 +918,55 @@
     out.kandidaten = w.auswahl.slice(0, 5).map(x => x.art === 'paket' ? { ...x.p.items[0], pfad: x.pfad, hersteller: x.hersteller } : x.a);
     if (!lv.ip) gelb.push('IP nicht angegeben');
     if (!lv.mass && !lv.ple && !teBedarf) gelb.push('Maße/PLE nicht angegeben');
-    if (lv.mass && best.m.mass && best.abstand > 150) gelb.push(`Maße weichen ab: ${best.m.mass.h}x${best.m.mass.b}x${best.m.mass.t} statt ${lv.mass.h}x${lv.mass.b}x${lv.mass.t}`);
+    if (lv.mass && best.m.mass && best.abstand > 150) gelb.push(`Maße weichen ab: ${massText(best.m.mass)} statt ${massText(lv.mass)}`);
+    if (zuNiedrig) gelb.push(`PL: kein Schrank mit Höhe ≥ ${hSoll} mm in den Favoriten`);
     if (w.fallback) gelb.push('Hersteller-Fallback: ' + best.hersteller);
     out.hinweise.push(...gelb);
     out.ampel = gelb.length ? 'gelb' : 'gruen';
+    return out;
+  }
+
+  // Hohlwand- oder Unterputzmontage im Text; null für Aufputz bzw. ohne Angabe
+  const MONTAGE_NAME = { hohlwand: 'Hohlwandverteiler', unterputz: 'Unterputzverteiler' };
+  function schrankMontage(t) {
+    if (/hohlwand|trockenbauwand|staenderwand|\bhwv\b/.test(t)) return 'hohlwand';
+    if (/unterputz|\bupv\b|\bup[-\s]?(?:verteiler|montage|einbau)/.test(t)) return 'unterputz';
+    return null;
+  }
+  // Hohlwand-/Unterputzverteiler aus LOS03/LOS03.1 (komplett mit Innenausstattung). Nie Ersatz durch einen
+  // Aufputzschrank: ohne passenden Favoriten bleibt die Position offen.
+  function einbauverteilerWaehlen(montage, lv, index, profil, out, opts, aktiv) {
+    const name = MONTAGE_NAME[montage];
+    const muster = montage === 'hohlwand' ? /hohlwand|\bhwv\b/ : /unterputz|\bupv\b/;
+    const gesehen = new Map();
+    (index.schrankAlle || [])
+      .filter(a => /^LOS03(\.1)?$/.test(a.los.split(' ')[0]) && aktiv(a.los.split(' ')[0]))
+      .filter(a => { const tx = norm(a.pfad.join(' ') + ' ' + a.desc); return muster.test(tx) && /kleinv|verteiler|vert\./.test(tx) && !/\btuer\b|tuer,|plantasche/.test(norm(a.desc)); })
+      // gleicher Artikel in LOS03 und LOS03.1: LOS03 behalten, dort sind sie als Komplettgerät geführt
+      .sort((x, y) => (/^LOS03\.1/.test(x.los) ? 1 : 0) - (/^LOS03\.1/.test(y.los) ? 1 : 0))
+      .forEach(a => { if (!gesehen.has(a.ext)) gesehen.set(a.ext, a); });
+    const pool = [...gesehen.values()];
+    const pleSoll = Math.max(lv.ple || 0, opts.teBedarf && !lv.ple ? Math.ceil(opts.teBedarf * 1.3) : 0);
+    const passend = pool.filter(a => !(lv.ip && (!a.m.ip || a.m.ip < lv.ip)) && !(pleSoll && (!a.m.ple || a.m.ple < pleSoll)) && !(lv.sk && a.m.sk && a.m.sk < lv.sk));
+    const reihen = opts.herstellerVorgabe ? [opts.herstellerVorgabe] : profilReihenfolge(profil, 'schrank');
+    let auswahl = passend, fallback = false;
+    for (let i = 0; i < reihen.length; i++) { const v = passend.filter(a => norm(a.hersteller) === norm(reihen[i])); if (v.length) { auswahl = v; fallback = i > 0; break; } }
+    const nachPle = (x, y) => (x.m.ple || 1e6) - (y.m.ple || 1e6);
+    auswahl.sort(nachPle); pool.sort(nachPle);
+    out.kandidaten = (auswahl.length ? auswahl : pool).slice(0, 5);
+    if (!auswahl.length) {
+      out.placeholder = 'OFFEN: ' + name;
+      out.hinweise.push(`PL: ${name} nicht in den Favoriten (${merkmalText(lv) || 'ohne Angaben'}) – Favoriten ergänzen`);
+      return out;
+    }
+    const a = auswahl[0];
+    out.paket = { desc: a.desc, notes: a.notes, items: [a], hersteller: a.hersteller, pfad: a.pfad, m: a.m };
+    out.hinweise.push(`${name} aus ${a.los.split(' ')[0]} (mit Innenausstattung)`);
+    out.hinweise.push('PL: Kleinteile, Prüfprotokoll, Transport, Montage ergänzen');
+    if (!lv.ip) out.hinweise.push('IP nicht angegeben');
+    if (!pleSoll) out.hinweise.push('PLE nicht angegeben');
+    if (fallback) out.hinweise.push('Hersteller-Fallback: ' + a.hersteller);
+    out.ampel = 'gelb';
     return out;
   }
 
@@ -977,7 +1048,7 @@
     const out = [];
     const pole = /5-?polig|l1\s?-\s?l3\s?,\s?n\s?,\s?pe/.test(t) ? 5 : /4-?polig/.test(t) ? 4 : /3-?polig/.test(t) ? 3 : 5;
     const icw = m.icw || 0;
-    const breite = m.mass ? m.mass.b : (m.bxt ? m.bxt.b : null);
+    const breite = (m.mass && m.mass.b) || (m.bxt ? m.bxt.b : null);
     const lStr = x => x.toLocaleString('de-DE');
     // Hauptsammelschiene
     const w = schieneWaehlen(index, opts, 'hauptsammelschiene', pole, hssIn, icw);

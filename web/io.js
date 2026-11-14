@@ -8,6 +8,21 @@
 })(typeof self !== 'undefined' ? self : this, function (LVX) {
   'use strict';
 
+  // Nichtssagender Kurztext, z. B. die STLB-Bau-Kennung statt des eigentlichen Kurztexts
+  const KURZ_ALLGEMEIN = /^\s*(stlb[\s-]*bau|stlb|standardleistungsbuch(\s+bau)?)?\s*[.:]?\s*$/i;
+  // Kurztext für Anzeige und Gruppenname im Barebone: unverändert, außer er ist leer oder nur „STLB-Bau“ o. Ä.;
+  // dann der Anfang des Langtexts (bis zum ersten Komma, max. 90 Zeichen). Der Abgleich liest weiter den Originaltext.
+  function kurzAnzeige(p) {
+    const kurz = String((p && p.kurztext) || '').trim();
+    if (!KURZ_ALLGEMEIN.test(kurz)) return kurz;
+    const zeile = String((p && p.langtext) || '').split(/\r?\n/).map(l => l.trim()).find(l => l && !KURZ_ALLGEMEIN.test(l));
+    if (!zeile) return kurz;
+    const komma = zeile.search(/,\s/);
+    let satz = komma >= 15 ? zeile.slice(0, komma) : zeile;
+    if (satz.length > 90) satz = satz.slice(0, 90).replace(/\s+\S*$/, '') + ' …';
+    return satz;
+  }
+
   const SPALTEN = ['Position', 'Internal Position', 'Type', 'Description', 'Product Catalog Code', 'Product External ID',
     'Product/Service Wage Type', 'Time (minutes)', 'Quantity', 'Profit Surcharge', 'Supplementary Surcharge', 'Surcharge Type', 'Notes'];
 
@@ -240,9 +255,9 @@
       n++;
       const gpos = '1.' + n;
       const p = e.pos;
-      zeilen.push(gruppenZeile(gpos, `${p.oz} ${p.kurztext}`.slice(0, 250), p.menge || 1, p.langtext || null));
+      zeilen.push(gruppenZeile(gpos, `${p.oz} ${kurzAnzeige(p)}`.slice(0, 250), p.menge || 1, p.langtext || null));
       let k = 0;
-      if (e.haupt) schreibe(gpos + '.' + (++k), e.haupt, Number(p._menge) > 0 ? Number(p._menge) : 1, p.oz, p.kurztext, e.unter.length ? null : p.referenz);
+      if (e.haupt) schreibe(gpos + '.' + (++k), e.haupt, Number(p._menge) > 0 ? Number(p._menge) : 1, p.oz, kurzAnzeige(p), e.unter.length ? null : p.referenz);
       for (const u of e.unter) { if (!u.aus) schreibe(gpos + '.' + (++k), u.erg, u.menge, p.oz, u.erg.text, null); }
       for (const z of (e.zusatz || []).filter(z => z.gruppe)) {
         // Favoritengruppe mit allen Unterzeilen; Gruppenmenge = eingetragene Menge (z. B. Länge in m)
@@ -257,7 +272,7 @@
         pruef.push([gp, p.oz, 'Gruppe', 'Zusatzgruppe (von Hand)', '', '', '', gr.desc, z.menge, `${gr.anzahl} Artikel aus ${String(gr.los).split(' ')[0]} ${gr.pos}`, '', '', '']);
       }
       for (const z of (e.zusatz || []).filter(z => z.artikel)) schreibe(gpos + '.' + (++k), { ampel: 'gruen', artikel: z.artikel, hinweise: ['Zusatzartikel (von Hand)'], m: z.artikel.m || {}, text: z.artikel.desc }, z.menge, p.oz, z.artikel.desc, null);
-      if (!e.haupt && !e.unter.length && !(e.zusatz || []).length) schreibe(gpos + '.1', { ampel: 'rot', hinweise: ['nicht verarbeitet'], m: {}, text: p.kurztext }, 1, p.oz, p.kurztext, p.referenz);
+      if (!e.haupt && !e.unter.length && !(e.zusatz || []).length) schreibe(gpos + '.1', { ampel: 'rot', hinweise: ['nicht verarbeitet'], m: {}, text: p.kurztext }, 1, p.oz, kurzAnzeige(p), p.referenz);
     }
     lohnFallback.forEach(p => {
       const z = pruef.find(r => r[0] === p);
@@ -283,5 +298,5 @@
     return wb;
   }
 
-  return { SPALTEN, liesFavoriten, infoBlatt, liesLvXlsx, liesX83, baueAusgabe, schreibeBarebone, schreibePruefliste };
+  return { SPALTEN, kurzAnzeige, liesFavoriten, infoBlatt, liesLvXlsx, liesX83, baueAusgabe, schreibeBarebone, schreibePruefliste };
 });
