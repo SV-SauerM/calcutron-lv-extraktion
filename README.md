@@ -38,7 +38,7 @@ Aussagekraft begrenzt: Die Testtexte sind selbst formuliert. Der eigentliche Tes
 Regeln, die nach der Übergabe an OM-TOOL (`calcutron-vibes/OM-TOOL`) dort ergänzt wurden, gelten auch hier:
 
 - **STLB-Bau:** Kurztext „STLB-Bau“ (bzw. leer, „STLB“, „Standardleistungsbuch“) wird in Tabelle, Gruppenname und Prüfliste durch den Anfang des Langtexts ersetzt; der Abgleich liest weiter den Originaltext. Einzelangaben „Höhe '700' mm“, „Breite …“, „Tiefe …“ und „Anzahl Teilungseinheiten '48'“ (= PLE) werden gelesen.
-- **Schrankhöhe ist Mindestmaß**, solange ein ausreichend hoher Schrank passt; sonst gelb „PL: kein Schrank mit Höhe ≥ … mm“. Fehlende Einzelmaße werden nicht verglichen. Vorgabe auch als `H700` oder `700 hoch`.
+- **Schrankhöhe ist Mindestmaß bei Wand- und Kleinverteilern** (unter 1600 mm, nicht Stand/Anreih), solange ein ausreichend hoher Schrank passt; sonst gelb „PL: kein Schrank mit Höhe ≥ … mm“. Standschränke und NSHV-Felder: Maße nächstliegend wie bisher. Fehlende Einzelmaße werden nicht verglichen. Vorgabe auch als `H700` oder `700 hoch`.
 - **Hohlwand-/Unterputzverteiler** (Hohlwand, Trockenbauwand, Ständerwand, Unterputz): nur passende Verteiler aus LOS03 (komplett mit Innenausstattung), nie ein Aufputzschrank als Ersatz; sonst rot „OFFEN: Hohlwandverteiler“.
 - **Herstellerprofil:** Button „Alle Kategorien auf ‚Standard Hundt‘“.
 - Unterzeilen in der Tabelle deutlicher eingerückt.

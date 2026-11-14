@@ -871,8 +871,9 @@
       if (!passt(a.m, false)) continue;
       ein.push({ art: 'einzel', a, m: a.m, hersteller: a.hersteller, pfad: a.pfad, desc: a.desc, abstand: lv.mass ? abstandVon(a.m) : a.m.mass.h * a.m.mass.b / 1000, ple: a.m.ple || 1e6 });
     }
-    // LV-Höhe ist Mindestmaß, solange ein ausreichend hoher Schrank passt
-    const hSoll = lv.mass ? lv.mass.h : 0;
+    // LV-Höhe ist Mindestmaß bei Wand- und Kleinverteilern, solange ein ausreichend hoher Schrank passt.
+    // Standschränke und NSHV-Felder bleiben bei „nächstliegend“ (Höhen dort wegen Sockel nicht direkt vergleichbar).
+    const hSoll = lv.mass && !stand && lv.mass.h < 1600 ? lv.mass.h : 0;
     const hochGenug = x => !x.m.mass || x.m.mass.h >= hSoll;
     let zuNiedrig = false;
     if (hSoll && pak.concat(ein).some(x => x.m.mass && hochGenug(x))) {
